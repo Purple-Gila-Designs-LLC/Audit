@@ -58,11 +58,11 @@
 
 .PARAMETER SharePointSiteUrl
     Full URL of the SharePoint site where CSV files will be uploaded.
-    Example: https://contoso.sharepoint.com/sites/IT
+    Example: https://harddollarcorp.sharepoint.com/sites/SCCM
 
 .PARAMETER SharePointFolderPath
     Path to the target folder within the site's default document library.
-    Example: Shared Documents/Audits
+    Example: Shared Documents/Audit
     Leading and trailing slashes are handled automatically.
 
 .EXAMPLE
@@ -74,8 +74,8 @@
         -TenantId       "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" `
         -ClientId       "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy" `
         -ClientSecret   "your-client-secret-value" `
-        -SharePointSiteUrl    "https://contoso.sharepoint.com/sites/IT" `
-        -SharePointFolderPath "Shared Documents/Audits"
+        -SharePointSiteUrl    "https://harddollarcorp.sharepoint.com/sites/SCCM" `
+        -SharePointFolderPath "Shared Documents/Audit"
 
 .EXAMPLE
     # Override both role IDs if your tenant uses different values
@@ -85,12 +85,12 @@
         -ClientSecret         "your-client-secret-value" `
         -GlobalAdminRoleId    "68f97962-6168-438e-82ca-ee2fa01a40c3" `
         -PimRoleDefinitionId  "62e90394-69f5-4237-9190-012177145e10" `
-        -SharePointSiteUrl    "https://contoso.sharepoint.com/sites/IT" `
-        -SharePointFolderPath "Shared Documents/Audits"
+        -SharePointSiteUrl    "https://harddollarcorp.sharepoint.com/sites/SCCM" `
+        -SharePointFolderPath "Shared Documents/Audit"
 
 .NOTES
-    Author  : TechOps
-    Version : 1.0.0
+    Author  : RTillmon - InEight Technology Operations
+    Version : 1.1.0
     Created : 2026-03-05
 
     To confirm your tenant's Global Administrator directory role object ID, run:
@@ -126,11 +126,11 @@ function Run-EntraUserAudit {
         [string]$PimRoleDefinitionId = "62e90394-69f5-4237-9190-012177145e10",
 
         # ── SharePoint destination ───────────────────────────────────────────────
-        [Parameter(Mandatory = $true, HelpMessage = "Full SharePoint site URL, e.g. https://contoso.sharepoint.com/sites/IT")]
+        [Parameter(Mandatory = $true, HelpMessage = "Full SharePoint site URL, e.g. https://harddollarcorp.sharepoint.com/sites/SCCM")]
         [ValidateNotNullOrEmpty()]
         [string]$SharePointSiteUrl,
 
-        [Parameter(Mandatory = $true, HelpMessage = "Folder path within the site's default document library, e.g. Shared Documents/Audits")]
+        [Parameter(Mandatory = $true, HelpMessage = "Folder path within the site's default document library, e.g. Shared Documents/Audit")]
         [ValidateNotNullOrEmpty()]
         [string]$SharePointFolderPath
     )
@@ -226,7 +226,7 @@ function Run-EntraUserAudit {
         $uri      = [System.Uri]$SiteUrl
         $hostname = $uri.Host
 
-        # AbsolutePath for https://tenant.sharepoint.com/sites/IT  →  /sites/IT
+        # AbsolutePath for https://tenant.sharepoint.com/sites/SCCM  →  /sites/SCCM
         $sitePath = $uri.AbsolutePath.Trim('/')
 
         $siteApiUrl = "https://graph.microsoft.com/v1.0/sites/${hostname}:/${sitePath}"
@@ -493,8 +493,8 @@ function Run-EntraUserAudit {
 # SIG # Begin signature block
 # MIIsoAYJKoZIhvcNAQcCoIIskTCCLI0CAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCC6lQFOPQLn3yxx
-# IG9fCjJv/6haxDL0t32zPdCQrDop7aCCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA16ZD2HLoW8lCA
+# rTj4P40Hqm6+WXMXhaxJIiUAtsZXBqCCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -700,34 +700,34 @@ function Run-EntraUserAudit {
 # byBQdWJsaWMgQ29kZSBTaWduaW5nIENBIEVWIFIzNgIQBmp+HumDwNBvIWlKxs/D
 # ljANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkG
 # CSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEE
-# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCLdBtMu8dJuYPfbQwLVzthPgw7AdgWYlRR
-# tULkZ/97wzANBgkqhkiG9w0BAQEFAASCAgB8+VFI30QEHNoNzTCuBROAH7AhilPb
-# OqfL7BZWNHKWSWgeYTqZeC+Hi+MSmQ6ClbFhq/8Ew+XQnSOW4hIVpVkPH0vb7hMJ
-# hkFYIj8o42VpCfHNFYBAZJ1zU6FuuBges+D+rhcv5n4ek8MxxUN8r9mefJ+DSCtP
-# fYYI/MUFu8EAr3cftXet/z3Y/NLd9otisWut1favv7FQIS8zZAnzgB9y9sUIr7Yf
-# Gl7aQZOVM3mCqNGzHj8zuSkLVxd+V5p/RzRxjqdo5Iyq1lz6VhcXFSPvKXzkg9yp
-# SrIsB44/R4mPCuKR9FmhRvtoR+bU+QvBghyq3YucXfLRPnjQ6jvD+WxX+RvqrQHV
-# WZFLz54DwZjKRqPjeiZRqUmDbun+FGQ1uTRvB0foxSKbupygu6+aqW5Lt8uUV2Ho
-# PPGFcBCWXFiV21nTuNV5D8zgdXR2Ae+RCA6gFxcxyZfVdUq0izhJh8HOyV2+QIMU
-# zmzM0m/9npyKsg48MUZ9i5ZLAkheUONOMeDniRA9yWi0+GBneGJBhYCt0eFt2aaB
-# c+b76Pz9birLcQhVde24uaPCxLOZWSuMbCSxW11b07bP72ChGSre1sVSCU6WWz8+
-# rSk6jlsSaldCz3jVi5SINPvl7oNYRcwQGFcTY8s/niCycLOvIj7oDPHRvDtKljHE
-# jCLrc0MNNlYcV6GCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
+# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCAfoekKat6oJPLAY0/uHJ986eyBa139yuy7
+# 2p7U4vdnNTANBgkqhkiG9w0BAQEFAASCAgDOcPSsnwAbQNx61V8w2ul1SAaoGht1
+# v7TvVvSduXb2FLduVK32dkLvBRqRDxABmrqQX2wCETe6Wy593FAIT18w6xAEJBF3
+# D3FtjkdDi3kHyzoNPQ3Hs2fgaFp0LHKXB/Bhe89pfqQpPCNvV38H2Ej2OB8AtmN+
+# BGqtRC7vRsebQWWEfoON1YqUK//1Qmixb9AynuBSRW2Tu3FObETjjRJrTeyo/JbL
+# 3mNtqH5Jvntp3/aIxjx0XnbvA6k5Y6AyMN4Beb5jiNy33XQe2//SJ2CbHjWy1hSX
+# Q2YzJFMM22nlcT+Fv6a62vYkHxElCP97MU6JSsgzdTt3/RQiXEvUhoN/BTlp4TtL
+# dkYfvAaiGIodf9ojsruJ0qCQzz2N0VNBdhYiFutOl/UfKwIBNGvwPDxN1L0ZRGk4
+# CpAsUffSOQVhdoT9CJTdSCuYmRwAvBQhhbfCFkTaFl2ek0Ynop4IY0/BGpvMJAuF
+# TNuMJg4MwvIoh5CTg+qUT9EOb8RKw+MRyLOkct+S50IXs4MZaSb2vWHmnSzsB+VR
+# jYpM0hXvPDJ677UuPmKv3Gvx3MZ3NT3oxdHXjA3UsJmF8076OPkrv9dRNPthBQqI
+# ivnycWC5kz54qdgMfw1mvLYE4ypBYDbXSgNJVN2UPUDlXtMCHEv90jTP7wxuhvoT
+# dqjfOwwTFlRsLKGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
 # BgNVBAYTAlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjFBMD8GA1UEAxM4RGln
 # aUNlcnQgVHJ1c3RlZCBHNCBUaW1lU3RhbXBpbmcgUlNBNDA5NiBTSEEyNTYgMjAy
 # NSBDQTECEAqA7xhLjfEFgtHEdqeVdGgwDQYJYIZIAWUDBAIBBQCgaTAYBgkqhkiG
-# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjAzMDUyMDAxNTla
-# MC8GCSqGSIb3DQEJBDEiBCCrqFbiAG2k8Lxw7/mlZORm1CkuFLg9i1FcK1JEUREh
-# WDANBgkqhkiG9w0BAQEFAASCAgCkqr7LYq2GrKIiJ7W50cr6U64bHr+85na+l2xG
-# IzAxWTm3xebiaRs2br0gqcDaRfekK5jRJs2RuXSN3ssuFcAJRXIkwNOzuNoLJYoz
-# amufQsIT1X7Lf4TBsTA1rBbAFbCNfIT8NVyL+0CrXUyZHVvWAAOGrEqhT2PiZM0l
-# hAtdlrPcf944JxhHnsfbgA5Di+f/7w5WNu4uPB6Ga71OHd1UY1IEUwaPu9Ak8eOg
-# gf0ASgYsBYYmmyDquEVKfhbsTd9esJIU+lX9gfzBxpK9WlDPw76J01vreHiZX27N
-# Fw79g34xPIghhWGcg9FPUnSA3dduSdI4tNAEZaPAMWeH+rFV701+HXrTvzRV7o+F
-# v02aAV+r4dD7Jly8TycGKPoYNDIuYG2zNog5lSa6Ds9M1rzCR8BP3lojirIJkv9o
-# YwAlvRdVl7MWZv0DjcitDyuPm5vyve1j44E4Rklz6LEwe4TL8857cTxm3MUJ53yX
-# e5hRH837Btu8IKUZEnHblijqo88RB1/qPFgNOfDTWNCIM+ASDP484iFXEdguL0If
-# JZ8jtR4sumnl6g1Kl7i8Ph6aSakUDl9u+I+IF1s/zcngNpePgP/TFpMhqoL6b6DS
-# 47DNW1qWUimMHwGneIODVsI5GVJyxIZOY677MulVXK3sno/exWorzKyGQK27RLZ8
-# SFmOkA==
+# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjAzMDUyMDA4MTJa
+# MC8GCSqGSIb3DQEJBDEiBCB7yx+2VQWyjUe8BQ6wi74QSBIQZCTcVKCrJ5QUlUns
+# pTANBgkqhkiG9w0BAQEFAASCAgAbRMdibi4Ol294BrmzefBkxIvCTC+SCXSSYvEs
+# G9IS6QxTl8xkVhcfZASBfdBfA7Ab3rdzK7EuAyv2WT0oh1BGVp8jbID/C8NcYE7l
+# HnbsaYCxhOVNy57HF/4eUMjdScB7xPx3vITgqbX2rZop7eIy6ocqQuVtAiJRGbay
+# d5qybmUi2B93J60/pRNxhsIfHl9qXMUMb41cdkx12HGmBVN715oxOtTmBKd9NzNj
+# fC/VgvOx+DqMpKUVW8w9HPcFjixvpws1lavvN00EADktV5u+kVRG83GxT1UltOTN
+# WiGF6f+Fxxkv7GY+6pKIGNMX1xcovTOGyH6fLyvulXojSJjGrbJoZTdYkzfx1qAq
+# Q4u87PHuabrN0TFZa5VH9EMoGXJNoDnfnekkcIKECXaX2acj6jTLK+ZshpVRjTQ1
+# rPzj4nFlzSeX1eu4dG2hdQFeWxyOjY5ma5/GIz/A0FzhuabVXND27uGkjdMuH9Gs
+# b1qx/cNQqBiaKosXG2eVd/Awatn1GmRoJOHGrZaJGH1vlu415gIRZrrQe9OFqwME
+# xWp62Ww1a3U8knwqDxBYuzjyAtX6i2IK/EwDRdBD5NKLmjo+u+5izVw2H6jtN/DF
+# /NBPlOkq60UO5ZhV13kkns5bHSvdYnZHCNcVrKlWnYn4PYTUw/8vXEYoHDBARtAU
+# bAupHQ==
 # SIG # End signature block
