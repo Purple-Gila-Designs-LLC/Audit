@@ -1,57 +1,187 @@
-# Requires Microsoft.Graph module
-# This script assumes that you have the Microsoft.Graph module installed.  If not, please install using the following cmdlet
-# Install-Module -Name Microsoft.Graph -Repository PSGallery -Scope AllUsers -Force -AllowClobber
+<#
+.SYNOPSIS
+    Collects local-machine rights (local group membership + User Rights Assignment) and
+    reports them back to NinjaOne via device custom fields.
 
-Add-Type -AssemblyName PresentationFramework
+.DESCRIPTION
+    This script is NOT meant to be run standalone from a console. It is meant to be pasted
+    into NinjaOne's Automation Library (Administration > Library > Automation > Add > New
+    Script, language PowerShell) and invoked against devices by
+    ..\Get-NinjaOneServerRightsInventory.ps1 via Invoke-NinjaOneDeviceScript. It runs in the
+    NinjaOne agent's script context (SYSTEM by default), which is what gives it access to
+    secedit and local group membership without needing its own stored credential.
 
-# Create the GUI window
-[xml]$xaml = @"
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Title="Global Admins Exporter" Height="200" Width="400">
-    <Grid>
-        <Button Name="ExportButton" Content="Export to CSV" HorizontalAlignment="Center" VerticalAlignment="Center" Width="150" Height="50"/>
-    </Grid>
-</Window>
-"@
+    It collects:
+      - Membership of Administrators, Remote Desktop Users, and Remote Management Users
+        (add more via $GroupsToCheck below if you need others audited)
+      - User Rights Assignment (secedit /areas USER_RIGHTS) - who/what has "Log on as a
+        service", "Log on locally", "Deny logon through Remote Desktop Services", etc.,
+        with SIDs resolved to Domain\Name where possible
 
-$reader = (New-Object System.Xml.XmlNodeReader $xaml)
-$window = [Windows.Markup.XamlReader]::Load($reader)
+    The result is JSON-encoded, then GZip+Base64 compressed (device custom text fields have
+    limited length - compression buys meaningful headroom) and written to two custom fields
+    via the NinjaOne-agent-injected Ninja-Property-Set cmdlet:
+      - rightsInventoryPayload    (the compressed JSON)
+      - rightsInventoryTimestamp  (UTC ISO-8601 collection time - the orchestrator polls this
+                                    field to detect that a run has completed)
 
-# Event handler for the Export button
-$window.FindName("ExportButton").Add_Click({
-    # Connect to Microsoft Graph (Manual Auth)
-    Connect-MgGraph
+    Both custom fields must exist (Device-scoped) before this script is used - see
+    ..\docs\NinjaOne-API-Setup.md for the one-time setup.
 
-    # Set ID for Global Admin Role
-    $globalAdmin = "68f97962-6168-438e-82ca-ee2fa01a40c3"
+.NOTES
+    Author  : RTillmon - InEight Technology Operations (with Claude Code)
+    Version : 1.0.0
+    Created : 2026-09-14
 
-    # List active Global Administrators
-    $activeAdmins = Get-MgDirectoryRoleMember -DirectoryRoleId $globalAdmin | ForEach-Object {
-        Get-MgUser -UserId $_.Id
+    Ninja-Property-Set's exact calling convention has varied slightly across agent/module
+    versions. This script tries the modern named-parameter form first and falls back to the
+    piped form - verify against your agent version on the first live test run and simplify
+    once confirmed.
+
+    Not yet run against a live device - validate against one test server before rolling out
+    broadly (see docs\NinjaOne-API-Setup.md, "First test run").
+#>
+
+$ErrorActionPreference = 'Stop'
+
+$GroupsToCheck = @('Administrators', 'Remote Desktop Users', 'Remote Management Users')
+
+$Results = [ordered]@{
+    ComputerName = $env:COMPUTERNAME
+    CollectedUtc = (Get-Date).ToUniversalTime().ToString('o')
+    LocalGroups  = New-Object System.Collections.Generic.List[object]
+    UserRights   = New-Object System.Collections.Generic.List[object]
+    Errors       = New-Object System.Collections.Generic.List[string]
+}
+
+# --- Local group membership -------------------------------------------------
+function Get-LocalGroupMembersResilient {
+    # Get-LocalGroupMember throws "Failed to compare two elements in the array" (a .NET
+    # Array.Sort comparer quirk) when a group contains a member whose SID does not resolve to
+    # a name - e.g. an orphaned SID from a deleted account or decommissioned domain. That's
+    # exactly the kind of finding this audit wants to surface, not lose - confirmed live
+    # 2026-09-14 against a real server's Administrators group. Fall back to the WinNT ADSI
+    # provider, which tolerates unresolvable members and returns their raw SID instead of
+    # failing the whole group.
+    param([string]$GroupName)
+    try {
+        return @(Get-LocalGroupMember -Group $GroupName -ErrorAction Stop | ForEach-Object {
+            [pscustomobject]@{ Name = $_.Name; ObjectClass = $_.ObjectClass.ToString(); PrincipalSource = $_.PrincipalSource.ToString() }
+        })
+    } catch {
+        if ($_.Exception.Message -match 'group.+not found|No matching') { throw }  # let caller's catch handle "group absent"
+        $group = [ADSI]"WinNT://./$GroupName,group"
+        return @($group.Invoke('Members') | ForEach-Object {
+            $adsPath = $_.GetType().InvokeMember('AdsPath', 'GetProperty', $null, $_, $null)
+            $class = $_.GetType().InvokeMember('Class', 'GetProperty', $null, $_, $null)
+            # adsPath looks like WinNT://DOMAIN/Name (or .../Name,user for the local machine).
+            $name = (($adsPath -replace '^WinNT://', '') -replace ',[^,]+$', '') -replace '/', '\'
+            [pscustomobject]@{ Name = $name; ObjectClass = $class; PrincipalSource = 'ADSI fallback - see LocalGroupResilientFallback in Errors' }
+        })
+    }
+}
+
+foreach ($groupName in $GroupsToCheck) {
+    try {
+        $members = Get-LocalGroupMembersResilient -GroupName $groupName
+        foreach ($m in $members) {
+            $Results.LocalGroups.Add([pscustomobject]@{
+                LocalGroup      = $groupName
+                MemberName      = $m.Name
+                MemberType      = $m.ObjectClass
+                PrincipalSource = $m.PrincipalSource
+            })
+        }
+    } catch {
+        # Group not present on this machine (e.g. no RDP role) is expected and not an error.
+        if ($_.Exception.Message -notmatch 'group.+not found|No matching') {
+            $Results.Errors.Add("Group '$groupName': $($_.Exception.Message)")
+        }
+    }
+}
+
+# --- User Rights Assignment via secedit --------------------------------------
+try {
+    $seceditPath = Join-Path $env:TEMP "secedit_$([guid]::NewGuid()).cfg"
+    $null = secedit /export /cfg $seceditPath /areas USER_RIGHTS
+    if (-not (Test-Path $seceditPath)) {
+        throw 'secedit did not produce an export file.'
     }
 
-    # List eligible Global Administrators (via Privileged Identity Management)
-    $eligibleAdmins = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -Filter "roleDefinitionId eq '62e90394-69f5-4237-9190-012177145e10'" | ForEach-Object {
-        Get-MgUser -UserId $_.principalId
+    $inRightsSection = $false
+    foreach ($line in Get-Content -Path $seceditPath) {
+        if ($line -match '^\[Privilege Rights\]') { $inRightsSection = $true; continue }
+        if ($inRightsSection -and $line -match '^\[') { break }
+        if ($inRightsSection -and $line -match '^(Se\w+)\s*=\s*(.*)$') {
+            $privilege = $Matches[1]
+            $sids = $Matches[2] -split ',' | Where-Object { $_ } | ForEach-Object { $_.Trim().TrimStart('*') }
+            foreach ($sid in $sids) {
+                $trustee = $sid
+                try {
+                    $trustee = (New-Object System.Security.Principal.SecurityIdentifier($sid)).Translate([System.Security.Principal.NTAccount]).Value
+                } catch {
+                    # Unresolvable SID (orphaned/off-domain) - keep the raw SID, don't fail the run.
+                }
+                $Results.UserRights.Add([pscustomobject]@{
+                    Privilege = $privilege
+                    SID       = $sid
+                    Trustee   = $trustee
+                })
+            }
+        }
     }
+    Remove-Item -Path $seceditPath -Force -ErrorAction SilentlyContinue
+} catch {
+    $Results.Errors.Add("secedit export/parse: $($_.Exception.Message)")
+}
 
-    # Combine results
-    $allAdmins = $activeAdmins + $eligibleAdmins
+# --- Encode + compress --------------------------------------------------------
+function Compress-StringToBase64 {
+    param([string]$Text)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+    $ms = New-Object System.IO.MemoryStream
+    $gzip = New-Object System.IO.Compression.GZipStream($ms, [System.IO.Compression.CompressionMode]::Compress)
+    $gzip.Write($bytes, 0, $bytes.Length)
+    $gzip.Close()
+    return [Convert]::ToBase64String($ms.ToArray())
+}
 
-    # Export to CSV
-    $csvPath = [System.IO.Path]::Combine([System.Environment]::GetFolderPath("Desktop"), "GlobalAdmins.csv")
-    $allAdmins | Select-Object Id, DisplayName, UserPrincipalName, CreatedDateTime, AccountEnabled | Export-Csv -Path $csvPath -NoTypeInformation
+$json = $Results | ConvertTo-Json -Depth 6 -Compress
+$payload = Compress-StringToBase64 -Text $json
+$timestamp = (Get-Date).ToUniversalTime().ToString('o')
 
-    # Show message box
-    [System.Windows.MessageBox]::Show("CSV file has been exported to your Desktop: $csvPath", "Export Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
-})
+$MaxFieldLength = 200000   # generous ceiling for a WYSIWYG-type custom field; adjust to match
+                            # your field type's actual limit once confirmed in NinjaOne.
+if ($payload.Length -gt $MaxFieldLength) {
+    Write-Warning "Compressed payload ($($payload.Length) chars) exceeds MaxFieldLength ($MaxFieldLength). Truncating - this run's data is incomplete."
+    $payload = $payload.Substring(0, $MaxFieldLength)
+}
 
-# Show the window
-$window.ShowDialog()
+# --- Report back to NinjaOne ---------------------------------------------------
+function Set-NinjaProperty {
+    param([string]$Name, [string]$Value)
+    try {
+        Ninja-Property-Set -Name $Name -Value $Value
+    } catch {
+        try {
+            $Value | Ninja-Property-Set $Name
+        } catch {
+            Write-Warning "Ninja-Property-Set failed for '$Name': $($_.Exception.Message)"
+        }
+    }
+}
+
+Set-NinjaProperty -Name 'rightsInventoryPayload' -Value $payload
+Set-NinjaProperty -Name 'rightsInventoryTimestamp' -Value $timestamp
+
+Write-Output ("Rights inventory collected: {0} group memberships, {1} rights assignments, {2} errors. Payload size: {3} chars." -f `
+    $Results.LocalGroups.Count, $Results.UserRights.Count, $Results.Errors.Count, $payload.Length)
+
 # SIG # Begin signature block
 # MIIsoAYJKoZIhvcNAQcCoIIskTCCLI0CAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCPX+NNkMqCN60U
-# whtp/IP/Yd6mbXFsJ3JDsoDGJc4O9aCCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBn5rYmi2TnKaEk
+# Pn3N9IzCLLlz57jsVBeh5Q66x0Vv3aCCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -257,34 +387,34 @@ $window.ShowDialog()
 # byBQdWJsaWMgQ29kZSBTaWduaW5nIENBIEVWIFIzNgIQBmp+HumDwNBvIWlKxs/D
 # ljANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkG
 # CSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEE
-# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCivS4asq9pzIsS3IhuW7vVqDLxBHYBwvW3
-# IU6GxGTFQTANBgkqhkiG9w0BAQEFAASCAgDSd7L3+3bd7Wl2bz0JdPH7k6C1d+55
-# Sp2W1ehIKrHtT2vAsceHcxbFO8T8GiqR9v23yxSDdaQQyNMDzdCo70so09jrplMw
-# BXxfmTK8m41Ep5Zyr85eq9weJFpdwSjfQRFY32IP5TF1EnAlIFCLqEOp90hg4e+Z
-# BW3u10b0/AmYsUN8IRsI1uite+T+i8KLiUfyJXNrsqRhbZOAxUfVYXwBEcRyEkgH
-# 5Ny9GwHi79eM53hWqc18G7O937SfJh8QH+FCEj/Q3kDsognyeVai/DpLHOJZcO4Y
-# HxL057M3xqXxT8wiA/rNo+JDnsVnmCXXjvizQRbGAoZKhV3Jv3K1mFRdMU+1vFl/
-# k22DqN6yQ4lO1PYaAcVnpAk78xDC0rbHmYOevM/QM2D6Ho+hoYp8cFkNP1HTWV+i
-# /t4JZT+17gg71LDgX+5nXoqBWAMjR0ueD9CdCUb8whSxaCnH9/G+x0qQ2TY0s6hg
-# L2gk309PI8Azu7FlBhimhPG3ofZEDfLPOVdNvE4VbRDq6A7EBeLzuqGNXsFrMi40
-# toySq9a9aAq2XDWtr4U9hQZ3ahV/bvilXoa5UfScbtFaiyvC396gAM+m5BJwU9lI
-# 87B2SaSclmnaQnVvCBKVoyz8TY7rndCNgp4Z/puAcMV5QgUaxZZLscxg4LH0UdhJ
-# 1nBg0N5CLV4+pqGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
+# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCw5b1iaHmdcAhOc+eyhcExTIyVeD9FyuNt
+# ZNhp/Gt3cjANBgkqhkiG9w0BAQEFAASCAgDBBrjd04FgrGlMA3Nay0GbD0hzgy/N
+# 9/wIfrL6QhYrYr6bhu2NuoNYxfAzVdSlc2iDB/BRYqyCPpjF4gaYOBYwXQyqZtzG
+# YzOzUOfS2Lr1lB/fIgzlbSXpUqrAmQKuWr/Sbgjf0Fl1Lkq85gNGbSP9C/zNWCJO
+# SI3dVk8C6eordaa9FJuQ2gkMz3YEopmPQp23Td47QlwJ/KhG3ojrnzMBwwlDLjFY
+# UcIwK0g3F4XWhRMuI/NelysI9fZikniFGztMnWiF0h+pGsVUuh16ySHgNyHlnORH
+# BzsOzHAYd2uv9fbbndHKKCCD/aHIwFwboOoDkmu9LYSB8jqKyDeGhWuMJP8LhFtj
+# MVfGvrMRgPan8R0cDYIgweKa5suEmdyESTzOtQOrHwcpQrYNsvGoDaiY6YXuMNMy
+# QTLKXV/upw0+YjZkhYVYVTyk0L9nAo3hVYTnsVxJpMKVDzcdHLZgc7V6UjEacT6c
+# IqexZ9JlyguatbwUyLSxiuPfqm+P8pO7iN0L5HjCK2BEChEhJs1ywvnXBGnKzbVd
+# zruqpt8B2Iz52AJxSRhTNLYkWaW1m61lGSA3QU/PTveo+6aMGuR4+WCI8jdiy+zK
+# GlD8S5nWptuWrY89uJiXz2ue9wrPs1ou8iUdoknPpVj+Ozq/4HOdq4Pbuv9nb4t6
+# wuyIHw7KQHiXsaGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
 # BgNVBAYTAlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjFBMD8GA1UEAxM4RGln
 # aUNlcnQgVHJ1c3RlZCBHNCBUaW1lU3RhbXBpbmcgUlNBNDA5NiBTSEEyNTYgMjAy
 # NSBDQTECEAhP3DNPfkVO28MPj/mSGDUwDQYJYIZIAWUDBAIBBQCgaTAYBgkqhkiG
-# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MTQyMjQwNDZa
-# MC8GCSqGSIb3DQEJBDEiBCCkYZuIm5wcwfNAdJcsX3gpAyUOy84Zv9h6IkQHPKNU
-# 4DANBgkqhkiG9w0BAQEFAASCAgCvSavMd5bickXk1ouzcJaZyViCyfwo9xV0TmVy
-# AKvXjiGwcaWgbOIoZ9D4jLTh6tB/zMupZ5Tn97AaK6iO8eAxLY+afZ277IviV59U
-# XGiN8eLrwpaWHC6tkyV3QadaHFXkYG6T3Awt1AIapGvQswge8kvL2ZTQr+oZQ8AL
-# zTvAD0fu+tbrgUI7TZ4dKTK96R6tVaCKh4yBbwC/sMGFttOq93mJ8TIeUGT9L5Nr
-# xdjX4mZZhvmhtLFE9YknNyUMD6RuhIcOrrgRYwKMBk5bcEgeq+C47d9XY104s3Dz
-# JCo7JcgQb8o34d28ntP12bWhqVUM6/foIBl7TLHkOCqvNH3kmCQ0hai/kFAXavZ0
-# tgEoKpm4XJFRXquY/fyc9qoFKM0E71GvlNaPwYZUdIexFHbMylXG2iFJz6KQOdPR
-# umllnIZnBzw4K8tohx4gz723n5KfbcMgDA0VmmtIwPY7VbnuKXjzv72aJupJkHv5
-# tgAmz9G3hN04mH4tgARZPo9uW13OYtnCTogl3PG2fkB0BcmY2KsDVrHi5qJn2t32
-# EBFB2asIVEtpzl2z1owsbvFEiuWiJe/FXw7kRAIT3JaSaeoIMo2dmrHRlFJrR909
-# c9jUTLOa1MeNfbTLUkGFnx2v2w50IRAsFqRT8ENzyjAt+GZLw/7feQybTD+iHmYb
-# +rc+iw==
+# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MTQyMjQxMTNa
+# MC8GCSqGSIb3DQEJBDEiBCAJnkqd9LgSmBjFEBq2aoqghiyJlzmbVsJtWJSAvvQ9
+# mjANBgkqhkiG9w0BAQEFAASCAgBrDlD6VWg4285X9WZ1TZli5ADAHA5F8pBt1C6k
+# ocF5wZshLSqkr7RgybKjW7Z7ODy137Rg7WJF+EuIrnLP7OXO22kbQjdRNQHMrqVn
+# a5hnExJumpgOhIt7cAJhXIN2EuTiLZE7AuJPOySQ6CdBlXHJ4BQWRLq7aJ7f13oy
+# UqGiOnf0YLmEz6imeoOmZDyq87fO3ASJSC8nVBcc4azcGAVAXr4PLK6g7cc87SU2
+# ehIyx6wBtklRGQzKaZlVcagxjmG4YsJkP1BsXCMv7fsERtMyQ/M7EQLwWuoYQfvn
+# 0Vn4+QaT8xpXtO8FODplWW5mLiJdgsR5ZmDz7+LCRC3O7p6z8rclWIckF+QauJxu
+# xwr8dhYZfooKq1OJ2TI8SjkJ/IVL5f9WjbkQOAxvgsdpdFWA6Dsz5WcOsLmmqEm7
+# en1sIgMcWVGHayJa8Ez5gWdoGxyXHy7WpMV0l//tANrE/G1H+aMbWQ710fe+FgZX
+# o6d4RyXHCfOLtqHrpNJfRTDeIf/uoGX+VjS1vLfJVzZGLi0ZzRbXrP0fLS2KaS++
+# xTY8MwsZGDT3g742ISvmh6QUxNa/NhBLc2rBKnzVY5GGBv2TjlD6Vo/t2JvZlPNi
+# mCNI8kVDv+Kn9pufUgeJlVRMT4K70uGWjanAdCZrDLi3graiOXQ5SkzqNwJLQrw0
+# UknKbg==
 # SIG # End signature block

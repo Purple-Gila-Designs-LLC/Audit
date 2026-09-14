@@ -1,57 +1,164 @@
-# Requires Microsoft.Graph module
-# This script assumes that you have the Microsoft.Graph module installed.  If not, please install using the following cmdlet
-# Install-Module -Name Microsoft.Graph -Repository PSGallery -Scope AllUsers -Force -AllowClobber
+<#
+.SYNOPSIS
+    One-time bootstrap: performs the NinjaOne interactive (Authorization Code) login and
+    stores the resulting refresh token, so Get-NinjaOneServerRightsInventory.ps1 can run
+    script invocations unattended afterward.
 
-Add-Type -AssemblyName PresentationFramework
+.DESCRIPTION
+    Connect-NinjaOne -UseWebAuth (the module's built-in interactive flow) has a hardcoded
+    15-second timeout waiting for the OAuth callback - confirmed by reading the installed
+    module's source (Start-OAuthHTTPListener, NinjaOne.psm1) - which is not enough time for a
+    real human login (especially with MFA). This script re-implements the same flow with a
+    much longer timeout (-TimeoutSeconds, default 300) and stores the result the same way the
+    module would, so Get-NinjaOneServerRightsInventory.ps1's existing vault-read logic works
+    unchanged.
 
-# Create the GUI window
-[xml]$xaml = @"
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Title="Global Admins Exporter" Height="200" Width="400">
-    <Grid>
-        <Button Name="ExportButton" Content="Export to CSV" HorizontalAlignment="Center" VerticalAlignment="Center" Width="150" Height="50"/>
-    </Grid>
-</Window>
-"@
+    Requires: the NinjaOne API app's registered Redirect URI must be exactly
+    'http://localhost:<Port>/' (default port 9090) - this script's listener, like the module's,
+    only ever binds to localhost. A redirect URI pointing anywhere else (an external domain,
+    for example) cannot be captured here - the OAuth provider will deliver the code to that
+    other endpoint instead, not to this script, regardless of timeout.
 
-$reader = (New-Object System.Xml.XmlNodeReader $xaml)
-$window = [Windows.Markup.XamlReader]::Load($reader)
+.PARAMETER Port
+    Local port to listen on for the OAuth callback. Must match the NinjaOne app's registered
+    Redirect URI (http://localhost:<Port>/). Default 9090.
 
-# Event handler for the Export button
-$window.FindName("ExportButton").Add_Click({
-    # Connect to Microsoft Graph (Manual Auth)
-    Connect-MgGraph
+.PARAMETER TimeoutSeconds
+    How long to wait for the browser login to complete. Default 300 (5 minutes) - override
+    with -TimeoutSeconds if MFA in your environment typically takes longer.
 
-    # Set ID for Global Admin Role
-    $globalAdmin = "68f97962-6168-438e-82ca-ee2fa01a40c3"
+.PARAMETER Instance
+    NinjaOne region code (eu|oc|us|ca|us2). Default 'us'.
 
-    # List active Global Administrators
-    $activeAdmins = Get-MgDirectoryRoleMember -DirectoryRoleId $globalAdmin | ForEach-Object {
-        Get-MgUser -UserId $_.Id
+.PARAMETER Scopes
+    OAuth scopes to request. Default matches the tenant's granted scopes.
+
+.EXAMPLE
+    .\Initialize-NinjaOneUserContext.ps1
+
+    Run this once, interactively, by whichever NinjaOne user should be attributed as running
+    the rights-inventory scripts going forward.
+
+.NOTES
+    Author  : RTillmon - InEight Technology Operations (with Claude Code)
+    Version : 1.0.0
+    Created : 2026-09-14
+
+    Endpoints (ws/oauth/authorize, ws/oauth/token) and request bodies match the installed
+    NinjaOne module's own implementation exactly (confirmed by reading NinjaOne.psm1), so the
+    resulting tokens are stored under the same secret names (NinjaOne<Field>, no hyphen) the
+    module itself uses - Connect-NinjaOne -ReadFromSecretVault reads them the same way either
+    script wrote them.
+#>
+
+[CmdletBinding()]
+param(
+    [int]$Port = 9090,
+    [int]$TimeoutSeconds = 300,
+    [ValidateSet('eu', 'oc', 'us', 'ca', 'us2')]
+    [string]$Instance = 'us',
+    [string[]]$Scopes = @('monitoring', 'management', 'control', 'offline_access'),
+    [string]$VaultName = 'PGDLocalVault',
+    [string]$SecretPrefix = 'NinjaOne'
+)
+
+Import-Module Microsoft.PowerShell.SecretManagement -ErrorAction Stop
+
+$InstanceUrls = @{
+    eu = 'https://eu.ninjarmm.com'; oc = 'https://oc.ninjarmm.com'; us = 'https://app.ninjarmm.com'
+    ca = 'https://ca.ninjarmm.com'; us2 = 'https://us2.ninjarmm.com'
+}
+$BaseUrl = $InstanceUrls[$Instance]
+
+$ClientId = Get-Secret -Name "$SecretPrefix-ClientId" -AsPlainText -ErrorAction Stop
+$ClientSecret = Get-Secret -Name "$SecretPrefix-ClientSecret" -AsPlainText -ErrorAction Stop
+
+$RedirectUri = "http://localhost:$Port/"
+$State = [guid]::NewGuid().ToString()
+$ScopeString = $Scopes -join ' '
+
+$AuthorizeUri = "$BaseUrl/ws/oauth/authorize" +
+    "?response_type=code" +
+    "&client_id=$([uri]::EscapeDataString($ClientId))" +
+    "&client_secret=$([uri]::EscapeDataString($ClientSecret))" +
+    "&redirect_uri=$([uri]::EscapeDataString($RedirectUri))" +
+    "&state=$State" +
+    "&scope=$([uri]::EscapeDataString($ScopeString))"
+
+Write-Host "Redirect URI this script will listen on: $RedirectUri" -ForegroundColor Yellow
+Write-Host "This MUST exactly match a Redirect URI registered on the NinjaOne API app, or the callback will never arrive here." -ForegroundColor Yellow
+Write-Host "Starting local listener and opening browser (timeout: $TimeoutSeconds seconds) ..." -ForegroundColor Cyan
+
+$Http = [System.Net.HttpListener]::new()
+$Http.Prefixes.Add($RedirectUri)
+$Http.Start()
+
+try {
+    Start-Process $AuthorizeUri
+
+    $ContextTask = $Http.GetContextAsync()
+    if (-not $ContextTask.AsyncWaitHandle.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))) {
+        throw "Timed out after $TimeoutSeconds seconds waiting for the OAuth callback. Either the browser never opened/completed login, or the Redirect URI registered on the NinjaOne app doesn't exactly match $RedirectUri."
     }
 
-    # List eligible Global Administrators (via Privileged Identity Management)
-    $eligibleAdmins = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -Filter "roleDefinitionId eq '62e90394-69f5-4237-9190-012177145e10'" | ForEach-Object {
-        Get-MgUser -UserId $_.principalId
+    $Context = $ContextTask.GetAwaiter().GetResult()
+    $Query = $Context.Request.QueryString
+    $Code = $Query['code']
+    $ReturnedState = $Query['state']
+    $ErrorParam = $Query['error']
+
+    $Html = if ($Code -and $ReturnedState -eq $State) {
+        '<h1>NinjaOne login received</h1><p>You can close this tab.</p>'
+    } else {
+        "<h1>NinjaOne login failed</h1><p>$ErrorParam</p><p>You can close this tab.</p>"
     }
+    $ResponseBytes = [System.Text.Encoding]::UTF8.GetBytes($Html)
+    $Context.Response.ContentLength64 = $ResponseBytes.Length
+    $Context.Response.OutputStream.Write($ResponseBytes, 0, $ResponseBytes.Length)
+    $Context.Response.OutputStream.Close()
+} finally {
+    if ($Http.IsListening) { $Http.Stop() }
+    $Http.Dispose()
+}
 
-    # Combine results
-    $allAdmins = $activeAdmins + $eligibleAdmins
+if (-not $Code) {
+    throw "No authorization code received. NinjaOne reported: $ErrorParam"
+}
+if ($ReturnedState -ne $State) {
+    throw 'State mismatch on OAuth callback - possible CSRF, aborting without exchanging the code.'
+}
+Write-Host "Authorization code received. Exchanging for tokens ..." -ForegroundColor Cyan
 
-    # Export to CSV
-    $csvPath = [System.IO.Path]::Combine([System.Environment]::GetFolderPath("Desktop"), "GlobalAdmins.csv")
-    $allAdmins | Select-Object Id, DisplayName, UserPrincipalName, CreatedDateTime, AccountEnabled | Export-Csv -Path $csvPath -NoTypeInformation
+$TokenBody = @{
+    grant_type    = 'authorization_code'
+    client_id     = $ClientId
+    client_secret = $ClientSecret
+    code          = $Code
+    redirect_uri  = $RedirectUri
+    scope         = $ScopeString
+}
+$TokenResponse = Invoke-RestMethod -Method Post -Uri "$BaseUrl/ws/oauth/token" -Body $TokenBody -ContentType 'application/x-www-form-urlencoded'
 
-    # Show message box
-    [System.Windows.MessageBox]::Show("CSV file has been exported to your Desktop: $csvPath", "Export Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
-})
+if (-not $TokenResponse.refresh_token) {
+    throw 'Token exchange succeeded but no refresh_token was returned - check the offline_access scope was requested and granted.'
+}
 
-# Show the window
-$window.ShowDialog()
+# Store using the same (unprefixed-with-dash) secret names Connect-NinjaOne's own
+# -WriteToSecretVault uses, so its -ReadFromSecretVault reads these back identically.
+Set-Secret -Name "${SecretPrefix}Refresh" -Secret $TokenResponse.refresh_token -Vault $VaultName
+Set-Secret -Name "${SecretPrefix}Access" -Secret $TokenResponse.access_token -Vault $VaultName
+Set-Secret -Name "${SecretPrefix}Type" -Secret $TokenResponse.token_type -Vault $VaultName
+$ExpiresAt = (Get-Date).AddSeconds([int]$TokenResponse.expires_in).ToString('o')
+Set-Secret -Name "${SecretPrefix}Expires" -Secret $ExpiresAt -Vault $VaultName
+
+Write-Host "Done. Refresh token stored in vault '$VaultName' as '${SecretPrefix}Refresh'." -ForegroundColor Green
+Write-Host "Get-NinjaOneServerRightsInventory.ps1 will now use -UseTokenAuth automatically." -ForegroundColor Green
+
 # SIG # Begin signature block
 # MIIsoAYJKoZIhvcNAQcCoIIskTCCLI0CAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCPX+NNkMqCN60U
-# whtp/IP/Yd6mbXFsJ3JDsoDGJc4O9aCCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCC4viTZFJCotGfV
+# jmLb2TGkR7mn3alsWHfiU6aXdhHzAKCCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -257,34 +364,34 @@ $window.ShowDialog()
 # byBQdWJsaWMgQ29kZSBTaWduaW5nIENBIEVWIFIzNgIQBmp+HumDwNBvIWlKxs/D
 # ljANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkG
 # CSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEE
-# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCivS4asq9pzIsS3IhuW7vVqDLxBHYBwvW3
-# IU6GxGTFQTANBgkqhkiG9w0BAQEFAASCAgDSd7L3+3bd7Wl2bz0JdPH7k6C1d+55
-# Sp2W1ehIKrHtT2vAsceHcxbFO8T8GiqR9v23yxSDdaQQyNMDzdCo70so09jrplMw
-# BXxfmTK8m41Ep5Zyr85eq9weJFpdwSjfQRFY32IP5TF1EnAlIFCLqEOp90hg4e+Z
-# BW3u10b0/AmYsUN8IRsI1uite+T+i8KLiUfyJXNrsqRhbZOAxUfVYXwBEcRyEkgH
-# 5Ny9GwHi79eM53hWqc18G7O937SfJh8QH+FCEj/Q3kDsognyeVai/DpLHOJZcO4Y
-# HxL057M3xqXxT8wiA/rNo+JDnsVnmCXXjvizQRbGAoZKhV3Jv3K1mFRdMU+1vFl/
-# k22DqN6yQ4lO1PYaAcVnpAk78xDC0rbHmYOevM/QM2D6Ho+hoYp8cFkNP1HTWV+i
-# /t4JZT+17gg71LDgX+5nXoqBWAMjR0ueD9CdCUb8whSxaCnH9/G+x0qQ2TY0s6hg
-# L2gk309PI8Azu7FlBhimhPG3ofZEDfLPOVdNvE4VbRDq6A7EBeLzuqGNXsFrMi40
-# toySq9a9aAq2XDWtr4U9hQZ3ahV/bvilXoa5UfScbtFaiyvC396gAM+m5BJwU9lI
-# 87B2SaSclmnaQnVvCBKVoyz8TY7rndCNgp4Z/puAcMV5QgUaxZZLscxg4LH0UdhJ
-# 1nBg0N5CLV4+pqGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
+# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCAkzC6VuVlS1OgUPO2TRiABq/gFnMOlrqna
+# g4HjmJLopTANBgkqhkiG9w0BAQEFAASCAgDHivK083nxv28NAYOu+eqAvNVUOAzV
+# PEG+qo3S9Gd7r0qvPGGrmw2UGpe0dXmKYzD5EE4YPPti/MU6AuXu2cl5Sxmuyb6t
+# 4ZVu7XEEZMMQNPW9ddbK4j21k69s79X+zYTYPuATrtaqjyFYPZnvt8SUc1RdHxjR
+# dv58/XCQ7l5yJlVwBkjHd1zhaZF3JbG9uWacNJnmgQBtvBCJLO4GzV7mgUbOakpR
+# 0iEQCobuPDz5eytO3P/LsfL/WonhD6jmTccTXmLU51m4vlRY2xVNNZmF+y6vYs4c
+# Z638xQ22R+bX2G70UdGKieQgg4P/lWB7q+5vZKHDS9XczCxNQjzZiJcFcV+GY+BL
+# EyFa2Hq1rSiSjOofZH6i0afcF6C7KNF5Qeh3UewDTroyiHhViZMgeJTFUBy33wF2
+# NMcq6At1uYyU4A7C9KT67Bcl1R/wk6jmIB55Tc2jOJmUPQq308ms9UsefOWi1ypZ
+# sRQ7pvCe8z/4lA2y5UxVfRRqo6mw/Pay0QHF/RJjOMNLLCgJJClwgGRcEzrk2pzr
+# cmOSqAdOgVCj8t2GCaCORD0VMQX9PN9xZUVVVpo07ENQ6qEMA/zEsJVTUk4XjA/T
+# xhDAHRQdJi3Wjorovf9bCOsQUh9mUQRmCWQaW7U7bxaPwyM0dCTU4pREVtnPshv5
+# FKVhqFJljzQ+1KGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
 # BgNVBAYTAlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjFBMD8GA1UEAxM4RGln
 # aUNlcnQgVHJ1c3RlZCBHNCBUaW1lU3RhbXBpbmcgUlNBNDA5NiBTSEEyNTYgMjAy
 # NSBDQTECEAhP3DNPfkVO28MPj/mSGDUwDQYJYIZIAWUDBAIBBQCgaTAYBgkqhkiG
-# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MTQyMjQwNDZa
-# MC8GCSqGSIb3DQEJBDEiBCCkYZuIm5wcwfNAdJcsX3gpAyUOy84Zv9h6IkQHPKNU
-# 4DANBgkqhkiG9w0BAQEFAASCAgCvSavMd5bickXk1ouzcJaZyViCyfwo9xV0TmVy
-# AKvXjiGwcaWgbOIoZ9D4jLTh6tB/zMupZ5Tn97AaK6iO8eAxLY+afZ277IviV59U
-# XGiN8eLrwpaWHC6tkyV3QadaHFXkYG6T3Awt1AIapGvQswge8kvL2ZTQr+oZQ8AL
-# zTvAD0fu+tbrgUI7TZ4dKTK96R6tVaCKh4yBbwC/sMGFttOq93mJ8TIeUGT9L5Nr
-# xdjX4mZZhvmhtLFE9YknNyUMD6RuhIcOrrgRYwKMBk5bcEgeq+C47d9XY104s3Dz
-# JCo7JcgQb8o34d28ntP12bWhqVUM6/foIBl7TLHkOCqvNH3kmCQ0hai/kFAXavZ0
-# tgEoKpm4XJFRXquY/fyc9qoFKM0E71GvlNaPwYZUdIexFHbMylXG2iFJz6KQOdPR
-# umllnIZnBzw4K8tohx4gz723n5KfbcMgDA0VmmtIwPY7VbnuKXjzv72aJupJkHv5
-# tgAmz9G3hN04mH4tgARZPo9uW13OYtnCTogl3PG2fkB0BcmY2KsDVrHi5qJn2t32
-# EBFB2asIVEtpzl2z1owsbvFEiuWiJe/FXw7kRAIT3JaSaeoIMo2dmrHRlFJrR909
-# c9jUTLOa1MeNfbTLUkGFnx2v2w50IRAsFqRT8ENzyjAt+GZLw/7feQybTD+iHmYb
-# +rc+iw==
+# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MTQyMjQxMTBa
+# MC8GCSqGSIb3DQEJBDEiBCC0EjUhdw2JSPTU0q+pAgHo6qW/47YX+NcJXvxIYtx6
+# RTANBgkqhkiG9w0BAQEFAASCAgCIZZrQ0HQ52H0y3k3n0anjcA9eP3fqD5yyrJqM
+# yKCPKWY+DoGSf5N4bcqSIiIAYNhdinGOD9pGEKQ5MdvUh6vGBqLmUYrwCZImSdCp
+# 5xG5hBc3qs0pJJivy2a5sloaIH65mSSTi1BAIU/V0NqGCmqG6ME9Zjt6yYZSWzrC
+# Ub/b8RJaKNV3dSkkq2jCUZU5vZTRzcCudP/BuYDW4cDEyF/VUhQV8jtFZaErIH0l
+# lnbeJFaR9qwKLBqhuReH2Fuw0LPxHKsukDUBbLf/EpxPmnLo5DCNPU0Qjtzxhq0d
+# 7YIhDbB/NIV8rUEZ9gSSJlBDMu18c6TboWIdIPewvfL8RfKosWMuuFbT+0Drh6rX
+# 6QB7gOrFYPq7b5WyXYc9iejB7H+yHFX8AwxjE1EMo7MQbvOuYuo9IyT/IfYIZL+9
+# WWA0/IC30vtb+PJ3IlXubybSU0ZLrzdHeRbmtz0fVAXdZ+cg4LjidAKlfNdQbhpz
+# Hgcf8tZSnTNiez6rK2ijYLccTHzr/H4TDbkXrwjnGsLA79Ln9thIi93YD6DG8iHN
+# DADMzvObMn7RgiE9bYAMGJQAfVLDzo6JrdOKS+spF4Pi2VGRT8KcdeGtvRnHmfcU
+# paHtWRqWT6sPc3yJlMylsB2pBC+fTDiDNNl15LKAeKP6qyjNHApJo39Bmy1xWoAY
+# tl5OnQ==
 # SIG # End signature block
