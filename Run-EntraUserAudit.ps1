@@ -1,75 +1,105 @@
 <#
 .SYNOPSIS
-    Audits Entra ID Global Administrators (active and PIM-eligible) and all active
-    Entra ID Member users, then uploads the resulting CSV files to a SharePoint folder.
+    Audits Entra ID directory role assignments (ALL roles, active + PIM-eligible, with
+    group-based assignments expanded down to member users), all active Entra ID Member users
+    (with their group memberships and enterprise-app role assignments), and the tenant's
+    service principal inventory — then uploads the resulting CSV files to a SharePoint folder.
 
 .DESCRIPTION
     Run-EntraUserAudit uses the Microsoft Graph REST API with client-credential
     (application) authentication — no interactive sign-in required.
 
-    It produces two CSV files and uploads them to a specified SharePoint Online folder:
+    It produces three CSV files and uploads them to a specified SharePoint Online folder:
 
-        AuditEntraAdministrators_<yyyyMMdd_HHmmss>.csv
-            Columns: Id, DisplayName, UserPrincipalName, CreatedDateTime,
-                     AccountEnabled, AssignmentType
+        AuditEntraRoleAssignments_<yyyyMMdd_HHmmss>.csv
+            Every directory role assignment in the tenant (not just Global Administrator),
+            both currently active and PIM-eligible. A role held by a security group is
+            expanded to one row per member user (tagged "via group: <name>") in addition to a
+            row for the group itself, so this file answers "who effectively holds this role"
+            directly, not just "which principal object was assigned it."
+            Columns: RoleName, AssignmentType, PrincipalType, PrincipalId,
+                     PrincipalDisplayName, UserPrincipalName
 
         AuditEntraUsers_<yyyyMMdd_HHmmss>.csv
-            Columns: Id, DisplayName, UserPrincipalName, CreatedDateTime,
-                     AccountEnabled, Roles
+            Columns: Id, DisplayName, UserPrincipalName, CreatedDateTime, AccountEnabled,
+                     DirectoryRoles, Groups, RoleAssignableGroups, EnterpriseAppAccess
+            DirectoryRoles here is the user's *direct* role membership only (Graph's
+            memberOf/directoryRole does not reflect roles held via a role-assignable group) —
+            cross-reference AuditEntraRoleAssignments.csv for the complete picture including
+            group-derived roles. EnterpriseAppAccess lists which enterprise apps
+            (service principals) the user has been granted an app role on directly; it does
+            not resolve the specific role name within each app, nor access granted via group
+            (both noted as future enhancements — see .NOTES).
 
-    User role resolution is performed via the Graph JSON Batch endpoint (20 users per
-    request) to minimise execution time in large tenants.
+        AuditEntraServicePrincipals_<yyyyMMdd_HHmmss>.csv
+            Every service principal in the tenant with its credential expiry window —
+            forgotten/expiring service-principal secrets are a common privilege-hygiene gap.
+            Columns: Id, AppId, DisplayName, AccountEnabled, ServicePrincipalType,
+                     CredentialCount, EarliestCredentialExpiry, LatestCredentialExpiry
+            Owners are not included (would need a per-SP call — noted as a future enhancement).
 
 .REQUIRED MODULES
     None — all interactions use Invoke-RestMethod against the Microsoft Graph REST API.
     No PowerShell SDK modules need to be installed.
 
 .REQUIRED API PERMISSIONS (Application — on the App Registration)
-    Microsoft Graph:
-        User.Read.All              — Read all user profiles
-        RoleManagement.Read.All    — Read directory role memberships and PIM schedules
-        Directory.Read.All         — Read directory roles
+    Microsoft Graph (see docs\Entra-AppRegistration-Setup.md for the authoritative list):
+        Directory.Read.All         — Users, groups, memberships, directory roles/objects
+                                      (covers group-based role expansion and role-assignable
+                                      group detection too - Group.Read.All is not additionally
+                                      needed)
+        RoleManagement.Read.Directory — Directory role definitions and active/eligible
+                                      assignment schedules, for ALL roles (RoleManagement.Read.All
+                                      also works if that's what's already granted)
+        Application.Read.All       — Service principals, app role assignments, credential expiry
         Sites.ReadWrite.All        — Upload files to SharePoint
             (Alternatively use Sites.Selected for least-privilege access limited
              to the specific SharePoint site.)
 
 .PARAMETER TenantId
-    Azure AD / Entra ID Tenant ID (GUID).
+    Azure AD / Entra ID Tenant ID (GUID). Optional if the 'Entra-TenantId' secret exists in
+    SecretManagement (see -TenantIdSecretName) — matches the credential-storage pattern used
+    by Get-NinjaOneServerRightsInventory.ps1.
 
 .PARAMETER ClientId
-    Application (Client) ID of the App Registration.
+    Application (Client) ID of the App Registration. Optional — see -ClientIdSecretName.
 
 .PARAMETER ClientSecret
-    Client secret value for the App Registration.
+    Client secret value for the App Registration. Optional — see -ClientSecretSecretName.
 
-.PARAMETER GlobalAdminRoleId
-    The OBJECT ID of the Global Administrator directory role in your tenant.
-    This value is used to enumerate ACTIVE Global Administrators via
-    GET /directoryRoles/{id}/members.
-    Defaults to 68f97962-6168-438e-82ca-ee2fa01a40c3.
-    Note: Unlike role definition IDs, directory role object IDs can vary per tenant.
-    Verify this value via: GET https://graph.microsoft.com/v1.0/directoryRoles
+.PARAMETER TenantIdSecretName
+    SecretManagement secret name to resolve -TenantId from when not supplied directly.
+    Defaults to 'Entra-TenantId'.
 
-.PARAMETER PimRoleDefinitionId
-    The ROLE DEFINITION ID for the Global Administrator role used to query
-    PIM-eligible assignments via GET /roleManagement/directory/roleEligibilitySchedules.
-    This ID is consistent across all tenants for the Global Administrator role.
-    Defaults to 62e90394-69f5-4237-9190-012177145e10.
+.PARAMETER ClientIdSecretName
+    SecretManagement secret name to resolve -ClientId from when not supplied directly.
+    Defaults to 'Entra-ClientId'.
+
+.PARAMETER ClientSecretSecretName
+    SecretManagement secret name to resolve -ClientSecret from when not supplied directly.
+    Defaults to 'Entra-ClientSecret'.
 
 .PARAMETER SharePointSiteUrl
     Full URL of the SharePoint site where CSV files will be uploaded.
-    Example: https://harddollarcorp.sharepoint.com/sites/SCCM
+    Defaults to this project's established target: https://harddollarcorp.sharepoint.com/sites/SCCM
 
 .PARAMETER SharePointFolderPath
     Path to the target folder within the site's default document library.
-    Example: Shared Documents/Audit
-    Leading and trailing slashes are handled automatically.
+    Defaults to 'Shared Documents/Audit'. Leading/trailing slashes are handled automatically.
 
 .EXAMPLE
-    # Dot-source the file to load the function into the current session
-    . .\Run-EntraUserAudit.ps1
+    # One-time: store credentials so future runs need no parameters at all
+    Set-Secret -Name 'Entra-TenantId' -Secret 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+    Set-Secret -Name 'Entra-ClientId' -Secret 'yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy'
+    Set-Secret -Name 'Entra-ClientSecret' -Secret 'your-client-secret-value'
 
-    # Run the audit
+    # Then every run is just:
+    . .\Run-EntraUserAudit.ps1
+    Run-EntraUserAudit
+
+.EXAMPLE
+    # Explicit credentials, e.g. for a one-off test against a different app registration
+    . .\Run-EntraUserAudit.ps1
     Run-EntraUserAudit `
         -TenantId       "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" `
         -ClientId       "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy" `
@@ -77,63 +107,83 @@
         -SharePointSiteUrl    "https://harddollarcorp.sharepoint.com/sites/SCCM" `
         -SharePointFolderPath "Shared Documents/Audit"
 
-.EXAMPLE
-    # Override both role IDs if your tenant uses different values
-    Run-EntraUserAudit `
-        -TenantId             "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" `
-        -ClientId             "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy" `
-        -ClientSecret         "your-client-secret-value" `
-        -GlobalAdminRoleId    "68f97962-6168-438e-82ca-ee2fa01a40c3" `
-        -PimRoleDefinitionId  "62e90394-69f5-4237-9190-012177145e10" `
-        -SharePointSiteUrl    "https://harddollarcorp.sharepoint.com/sites/SCCM" `
-        -SharePointFolderPath "Shared Documents/Audit"
-
 .NOTES
-    Author  : RTillmon - InEight Technology Operations
-    Version : 1.1.0
+    Author  : RTillmon - InEight Technology Operations (with Claude Code)
+    Version : 2.1.0
     Created : 2026-03-05
+    Updated : 2026-09-14 — v2.0.0 expanded from Global-Admin-only to all directory roles (with
+              group-expansion), added per-user group membership + direct enterprise-app
+              access, added a service principal inventory. Removed -GlobalAdminRoleId /
+              -PimRoleDefinitionId (no longer needed — every role is covered, not one).
+              This is a breaking change to the function's parameter set and to the
+              AuditEntraAdministrators_*.csv filename (replaced by
+              AuditEntraRoleAssignments_*.csv, which is a superset) — update anything
+              downstream that depends on the old file/parameters.
+              v2.1.0 same day — TenantId/ClientId/ClientSecret are now optional with a
+              SecretManagement vault fallback (Entra-TenantId/Entra-ClientId/
+              Entra-ClientSecret), matching Get-NinjaOneServerRightsInventory.ps1's pattern;
+              SharePointSiteUrl/SharePointFolderPath now default to this project's
+              established target instead of being required every call.
 
-    To confirm your tenant's Global Administrator directory role object ID, run:
-        Invoke-RestMethod `
-            -Uri     "https://graph.microsoft.com/v1.0/directoryRoles" `
-            -Headers @{ Authorization = "Bearer <token>" } |
-        Select-Object -ExpandProperty value |
-        Where-Object { $_.displayName -eq 'Global Administrator' } |
-        Select-Object id, displayName
+    Known limitations (candidates for a future pass, kept out of this one to bound scope):
+      - Graph's $expand on a collection (used to pull each activated directory role's active
+        members in one call) can silently truncate a very large nested member list. Spot-check
+        any role with an unusually large membership against a direct
+        /directoryRoles/{id}/members call if the count looks suspicious.
+      - EnterpriseAppAccess (in AuditEntraUsers.csv) reflects only *direct* app role
+        assignments on the user, not access granted via group membership, and lists the app
+        name rather than resolving the specific role assigned within it.
+      - AuditEntraServicePrincipals.csv does not include owners (would need one extra Graph
+        call per service principal).
 #>
 
 function Run-EntraUserAudit {
     [CmdletBinding()]
     param (
         # ── Authentication ──────────────────────────────────────────────────────
-        [Parameter(Mandatory = $true, HelpMessage = "Entra ID Tenant ID (GUID)")]
-        [ValidateNotNullOrEmpty()]
+        # All three are optional if the matching secret exists in SecretManagement
+        # (see -*SecretName below) - mirrors Get-NinjaOneServerRightsInventory.ps1's pattern,
+        # so credentials never need to be typed/pasted for a routine re-run.
+        [Parameter(HelpMessage = "Entra ID Tenant ID (GUID)")]
         [string]$TenantId,
 
-        [Parameter(Mandatory = $true, HelpMessage = "App Registration Client ID (GUID)")]
-        [ValidateNotNullOrEmpty()]
+        [Parameter(HelpMessage = "App Registration Client ID (GUID)")]
         [string]$ClientId,
 
-        [Parameter(Mandatory = $true, HelpMessage = "App Registration Client Secret")]
-        [ValidateNotNullOrEmpty()]
+        [Parameter(HelpMessage = "App Registration Client Secret")]
         [string]$ClientSecret,
 
-        # ── Role IDs ────────────────────────────────────────────────────────────
-        [Parameter(HelpMessage = "Object ID of the Global Administrator directory role in your tenant")]
-        [string]$GlobalAdminRoleId = "68f97962-6168-438e-82ca-ee2fa01a40c3",
-
-        [Parameter(HelpMessage = "Role Definition ID used to query PIM-eligible Global Administrator assignments")]
-        [string]$PimRoleDefinitionId = "62e90394-69f5-4237-9190-012177145e10",
+        [string]$TenantIdSecretName = 'Entra-TenantId',
+        [string]$ClientIdSecretName = 'Entra-ClientId',
+        [string]$ClientSecretSecretName = 'Entra-ClientSecret',
 
         # ── SharePoint destination ───────────────────────────────────────────────
-        [Parameter(Mandatory = $true, HelpMessage = "Full SharePoint site URL, e.g. https://harddollarcorp.sharepoint.com/sites/SCCM")]
-        [ValidateNotNullOrEmpty()]
-        [string]$SharePointSiteUrl,
-
-        [Parameter(Mandatory = $true, HelpMessage = "Folder path within the site's default document library, e.g. Shared Documents/Audit")]
-        [ValidateNotNullOrEmpty()]
-        [string]$SharePointFolderPath
+        # Defaulted to this project's established target (docs\*.md, prior runs) - override
+        # if uploading somewhere else.
+        [string]$SharePointSiteUrl = 'https://harddollarcorp.sharepoint.com/sites/SCCM',
+        [string]$SharePointFolderPath = 'Shared Documents/Audit'
     )
+
+    # --- Resolve credentials -----------------------------------------------------------
+    # Prefer SecretManagement (local SecretStore today; swaps to Keeper's SecretManagement.Keeper
+    # vault later with no script changes - same convention as the NinjaOne orchestrator) over
+    # explicit parameters, which exist mainly for one-off/manual testing.
+    if (-not $TenantId -or -not $ClientId -or -not $ClientSecret) {
+        if (-not (Get-Module -ListAvailable -Name Microsoft.PowerShell.SecretManagement)) {
+            throw 'No -TenantId/-ClientId/-ClientSecret supplied and Microsoft.PowerShell.SecretManagement is not available to resolve them. Either pass credentials explicitly or store them as secrets - see docs\Entra-AppRegistration-Setup.md.'
+        }
+        Import-Module Microsoft.PowerShell.SecretManagement -ErrorAction Stop
+
+        if (-not $TenantId) {
+            $TenantId = Get-Secret -Name $TenantIdSecretName -AsPlainText -ErrorAction Stop
+        }
+        if (-not $ClientId) {
+            $ClientId = Get-Secret -Name $ClientIdSecretName -AsPlainText -ErrorAction Stop
+        }
+        if (-not $ClientSecret) {
+            $ClientSecret = Get-Secret -Name $ClientSecretSecretName -AsPlainText -ErrorAction Stop
+        }
+    }
 
     #region ── Internal helper functions ──────────────────────────────────────────
 
@@ -210,6 +260,21 @@ function Run-EntraUserAudit {
 
     <#
     .SYNOPSIS
+        Maps a Graph principal object's @odata.type to a short, readable type name.
+    #>
+    function Get-PrincipalTypeName {
+        param($Principal)
+        if (-not $Principal) { return 'Unknown' }
+        switch ($Principal.'@odata.type') {
+            '#microsoft.graph.user'             { 'User' }
+            '#microsoft.graph.group'            { 'Group' }
+            '#microsoft.graph.servicePrincipal' { 'ServicePrincipal' }
+            default                             { 'Unknown' }
+        }
+    }
+
+    <#
+    .SYNOPSIS
         Uploads a string (CSV content) to a SharePoint Online folder via the
         Graph Files API, creating the upload path if it does not exist.
     #>
@@ -270,7 +335,7 @@ function Run-EntraUserAudit {
 
     #region ── Authentication ──────────────────────────────────────────────────────
 
-    Write-Host "[1/5] Acquiring Graph API access token..." -ForegroundColor Cyan
+    Write-Host "[1/7] Acquiring Graph API access token..." -ForegroundColor Cyan
 
     $token     = Get-GraphAccessToken -TenantId $TenantId -ClientId $ClientId -ClientSecret $ClientSecret
     $graphBase = "https://graph.microsoft.com/v1.0"
@@ -280,92 +345,113 @@ function Run-EntraUserAudit {
 
     #endregion
 
-    #region ── Admin Audit ─────────────────────────────────────────────────────────
+    #region ── Directory role assignments (ALL roles, active + eligible) ──────────
 
-    Write-Host "[2/5] Querying Global Administrators..." -ForegroundColor Cyan
+    Write-Host "[2/7] Fetching role definitions..." -ForegroundColor Cyan
+    $roleDefs = Invoke-GraphPagedRequest -AccessToken $token `
+        -Uri "$graphBase/roleManagement/directory/roleDefinitions?`$select=id,displayName"
+    $roleDefMap = @{}
+    foreach ($rd in $roleDefs) { $roleDefMap[$rd.id] = $rd.displayName }
+    Write-Host "      Role definitions            : $($roleDefMap.Count)" -ForegroundColor Gray
 
-    # ── Active Global Administrators ─────────────────────────────────────────────
-    # Endpoint: GET /directoryRoles/{objectId}/members
-    # Returns all users, groups, and service principals currently assigned the role.
-    $activeMembers = Invoke-GraphPagedRequest `
-        -AccessToken $token `
-        -Uri         "$graphBase/directoryRoles/$GlobalAdminRoleId/members"
+    Write-Host "[3/7] Fetching ACTIVE role assignments (all roles)..." -ForegroundColor Cyan
+    # /directoryRoles only lists roles that are "activated" (have at least one member) - that's
+    # fine, a role nobody holds has nothing to report. $expand=members returns each role's
+    # current members inline in the same call - see .NOTES for the large-membership caveat.
+    $activeRoles = Invoke-GraphPagedRequest -AccessToken $token `
+        -Uri "$graphBase/directoryRoles?`$expand=members"
+    Write-Host "      Activated roles              : $($activeRoles.Count)" -ForegroundColor Gray
 
-    $activeAdmins = foreach ($member in $activeMembers) {
-        # Limit to user objects only (skip groups, service principals, etc.)
-        if ($member.userPrincipalName -or $member.'@odata.type' -eq '#microsoft.graph.user') {
-            [PSCustomObject]@{
-                Id                = $member.id
-                DisplayName       = $member.displayName
-                UserPrincipalName = $member.userPrincipalName
-                CreatedDateTime   = $member.createdDateTime
-                AccountEnabled    = $member.accountEnabled
-                AssignmentType    = "Active"
+    Write-Host "[4/7] Fetching PIM-ELIGIBLE role assignments (all roles)..." -ForegroundColor Cyan
+    $eligibleSchedules = Invoke-GraphPagedRequest -AccessToken $token `
+        -Uri "$graphBase/roleManagement/directory/roleEligibilitySchedules?`$expand=principal"
+    Write-Host "      Eligible schedules            : $($eligibleSchedules.Count)" -ForegroundColor Gray
+
+    # Cache group membership expansions - the same group may hold multiple roles, or be
+    # encountered again as an eligible principal after already being seen as an active one.
+    $groupMemberCache = @{}
+    function Get-CachedGroupUserMembers {
+        param([string]$GroupId, [string]$AccessToken, [string]$GraphBase)
+        if ($groupMemberCache.ContainsKey($GroupId)) { return $groupMemberCache[$GroupId] }
+        $members = Invoke-GraphPagedRequest -AccessToken $AccessToken `
+            -Uri "$GraphBase/groups/$GroupId/members?`$select=id,displayName,userPrincipalName"
+        $userMembers = @($members | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.user' })
+        $groupMemberCache[$GroupId] = $userMembers
+        return $userMembers
+    }
+
+    $roleAssignmentRows = [System.Collections.Generic.List[object]]::new()
+
+    function Add-RoleAssignmentRows {
+        param(
+            [string]$RoleName,
+            [string]$AssignmentTypeLabel,
+            $Principal,
+            [System.Collections.Generic.List[object]]$Sink,
+            [string]$AccessToken,
+            [string]$GraphBase
+        )
+        $ptype = Get-PrincipalTypeName $Principal
+        if ($ptype -eq 'Group') {
+            $memberUsers = Get-CachedGroupUserMembers -GroupId $Principal.id -AccessToken $AccessToken -GraphBase $GraphBase
+            foreach ($mu in $memberUsers) {
+                $Sink.Add([PSCustomObject]@{
+                    RoleName              = $RoleName
+                    AssignmentType        = "$AssignmentTypeLabel (via group: $($Principal.displayName))"
+                    PrincipalType         = 'User'
+                    PrincipalId           = $mu.id
+                    PrincipalDisplayName  = $mu.displayName
+                    UserPrincipalName     = $mu.userPrincipalName
+                })
             }
+            # Also record the group itself, for traceability of which group is granting access.
+            $Sink.Add([PSCustomObject]@{
+                RoleName              = $RoleName
+                AssignmentType        = $AssignmentTypeLabel
+                PrincipalType         = 'Group'
+                PrincipalId           = $Principal.id
+                PrincipalDisplayName  = $Principal.displayName
+                UserPrincipalName     = $null
+            })
+        } else {
+            $Sink.Add([PSCustomObject]@{
+                RoleName              = $RoleName
+                AssignmentType        = $AssignmentTypeLabel
+                PrincipalType         = $ptype
+                PrincipalId           = $Principal.id
+                PrincipalDisplayName  = $Principal.displayName
+                UserPrincipalName     = $Principal.userPrincipalName
+            })
         }
     }
 
-    Write-Host "      Active Global Administrators   : $(@($activeAdmins).Count)" -ForegroundColor Gray
-
-    # ── PIM-Eligible Global Administrators ───────────────────────────────────────
-    # Endpoint: GET /roleManagement/directory/roleEligibilitySchedules
-    # $expand=principal avoids a second round-trip per eligible assignment.
-    $encodedPimFilter = [System.Uri]::EscapeDataString("roleDefinitionId eq '$PimRoleDefinitionId'")
-    $eligibleSchedules = Invoke-GraphPagedRequest `
-        -AccessToken $token `
-        -Uri         "$graphBase/roleManagement/directory/roleEligibilitySchedules?`$filter=$encodedPimFilter&`$expand=principal"
-
-    $eligibleAdmins = foreach ($schedule in $eligibleSchedules) {
-        $p = $schedule.principal
-        if ($p -and ($p.userPrincipalName -or $p.'@odata.type' -eq '#microsoft.graph.user')) {
-            [PSCustomObject]@{
-                Id                = $p.id
-                DisplayName       = $p.displayName
-                UserPrincipalName = $p.userPrincipalName
-                CreatedDateTime   = $p.createdDateTime
-                AccountEnabled    = $p.accountEnabled
-                AssignmentType    = "Eligible (PIM)"
-            }
+    foreach ($role in $activeRoles) {
+        foreach ($member in $role.members) {
+            Add-RoleAssignmentRows -RoleName $role.displayName -AssignmentTypeLabel 'Active' `
+                -Principal $member -Sink $roleAssignmentRows -AccessToken $token -GraphBase $graphBase
         }
     }
+    foreach ($schedule in $eligibleSchedules) {
+        if (-not $schedule.principal) { continue }
+        $roleName = $roleDefMap[$schedule.roleDefinitionId]
+        if (-not $roleName) { $roleName = $schedule.roleDefinitionId }
+        Add-RoleAssignmentRows -RoleName $roleName -AssignmentTypeLabel 'Eligible (PIM)' `
+            -Principal $schedule.principal -Sink $roleAssignmentRows -AccessToken $token -GraphBase $graphBase
+    }
 
-    Write-Host "      PIM-Eligible Global Admins     : $(@($eligibleAdmins).Count)" -ForegroundColor Gray
+    Write-Host "      Total role-assignment rows    : $($roleAssignmentRows.Count) (group-expanded)" -ForegroundColor Green
 
-    # ── Deduplicate — a user may appear in both lists ─────────────────────────────
-    $combinedAdmins = (@($activeAdmins) + @($eligibleAdmins)) |
-        Group-Object -Property Id |
-        ForEach-Object {
-            if ($_.Count -gt 1) {
-                # Present in both lists; merge the AssignmentType value
-                $base = $_.Group[0]
-                [PSCustomObject]@{
-                    Id                = $base.Id
-                    DisplayName       = $base.DisplayName
-                    UserPrincipalName = $base.UserPrincipalName
-                    CreatedDateTime   = $base.CreatedDateTime
-                    AccountEnabled    = $base.AccountEnabled
-                    AssignmentType    = "Active; Eligible (PIM)"
-                }
-            }
-            else {
-                $_.Group[0]
-            }
-        }
-
-    Write-Host "      Total unique admin accounts    : $(@($combinedAdmins).Count)" -ForegroundColor Green
-
-    # Build CSV content in memory (no temp file required)
-    $adminCsvName    = "AuditEntraAdministrators_$timestamp.csv"
-    $adminCsvContent = $combinedAdmins |
-        Select-Object Id, DisplayName, UserPrincipalName, CreatedDateTime, AccountEnabled, AssignmentType |
+    $roleAssignmentCsvName    = "AuditEntraRoleAssignments_$timestamp.csv"
+    $roleAssignmentCsvContent = $roleAssignmentRows |
+        Select-Object RoleName, AssignmentType, PrincipalType, PrincipalId, PrincipalDisplayName, UserPrincipalName |
         ConvertTo-Csv -NoTypeInformation |
         Out-String
 
     #endregion
 
-    #region ── User Audit ──────────────────────────────────────────────────────────
+    #region ── User audit (roles, groups, enterprise-app access) ──────────────────
 
-    Write-Host "[3/5] Querying active Entra ID Member users..." -ForegroundColor Cyan
+    Write-Host "[5/7] Querying active Entra ID Member users..." -ForegroundColor Cyan
 
     # Retrieve all active, non-guest accounts
     # $select limits the payload; $filter excludes disabled and guest accounts
@@ -377,23 +463,34 @@ function Run-EntraUserAudit {
         -Uri         "$graphBase/users?`$filter=$userFilter&`$select=$userSelect"
 
     Write-Host "      Active member users found      : $(@($activeUsers).Count)" -ForegroundColor Gray
-    Write-Host "[4/5] Resolving role assignments (Graph batch, 20 users/request)..." -ForegroundColor Cyan
+    Write-Host "[6/7] Resolving roles, groups, and app access (Graph batch)..." -ForegroundColor Cyan
     Write-Host "      This may take several minutes for large tenants." -ForegroundColor Yellow
 
     $userDetailsWithRoles = [System.Collections.Generic.List[object]]::new()
-    $batchSize            = 20
+    # The Graph $batch endpoint hard-caps at 20 sub-requests per call. Each user here generates
+    # 3 sub-requests (roles, groups, app role assignments), so 6 users/batch keeps every call
+    # at 18 sub-requests - comfortably under the limit while still batching.
+    $batchSize = 6
 
     for ($i = 0; $i -lt $activeUsers.Count; $i += $batchSize) {
         $end   = [Math]::Min($i + $batchSize - 1, $activeUsers.Count - 1)
         $chunk = $activeUsers[$i..$end]
 
-        # Build a JSON Batch request — one sub-request per user, asking for their
-        # directory role memberships only (microsoft.graph.directoryRole cast).
         $batchRequests = foreach ($user in $chunk) {
             @{
-                id     = $user.id
+                id     = "$($user.id)_roles"
                 method = "GET"
                 url    = "/users/$($user.id)/memberOf/microsoft.graph.directoryRole?`$select=displayName"
+            }
+            @{
+                id     = "$($user.id)_groups"
+                method = "GET"
+                url    = "/users/$($user.id)/memberOf/microsoft.graph.group?`$select=displayName,isAssignableToRole"
+            }
+            @{
+                id     = "$($user.id)_approles"
+                method = "GET"
+                url    = "/users/$($user.id)/appRoleAssignments?`$select=resourceDisplayName"
             }
         }
 
@@ -416,43 +513,101 @@ function Run-EntraUserAudit {
             continue
         }
 
-        # Index responses by their ID (which equals the user's GUID)
+        # Index responses by their composite ID (userId_roles / userId_groups / userId_approles)
         $responseMap = @{}
         foreach ($resp in $batchResult.responses) {
             $responseMap[$resp.id] = $resp
         }
 
         foreach ($user in $chunk) {
-            $resp  = $responseMap[$user.id]
-            $roles = @()
+            $rolesResp    = $responseMap["$($user.id)_roles"]
+            $groupsResp   = $responseMap["$($user.id)_groups"]
+            $approlesResp = $responseMap["$($user.id)_approles"]
 
-            if ($resp -and $resp.status -eq 200 -and $resp.body.value) {
-                $roles = $resp.body.value | ForEach-Object { $_.displayName }
+            $roles = @()
+            if ($rolesResp -and $rolesResp.status -eq 200 -and $rolesResp.body.value) {
+                $roles = $rolesResp.body.value | ForEach-Object { $_.displayName }
+            }
+
+            $allGroups          = @()
+            $roleAssignableGroups = @()
+            if ($groupsResp -and $groupsResp.status -eq 200 -and $groupsResp.body.value) {
+                $allGroups = $groupsResp.body.value | ForEach-Object { $_.displayName }
+                $roleAssignableGroups = $groupsResp.body.value |
+                    Where-Object { $_.isAssignableToRole } |
+                    ForEach-Object { $_.displayName }
+            }
+
+            $enterpriseAppAccess = @()
+            if ($approlesResp -and $approlesResp.status -eq 200 -and $approlesResp.body.value) {
+                $enterpriseAppAccess = $approlesResp.body.value |
+                    ForEach-Object { $_.resourceDisplayName } |
+                    Select-Object -Unique
             }
 
             $userDetailsWithRoles.Add([PSCustomObject]@{
-                Id                = $user.id
-                DisplayName       = $user.displayName
-                UserPrincipalName = $user.userPrincipalName
-                CreatedDateTime   = $user.createdDateTime
-                AccountEnabled    = $user.accountEnabled
-                Roles             = ($roles -join "; ")
+                Id                    = $user.id
+                DisplayName           = $user.displayName
+                UserPrincipalName     = $user.userPrincipalName
+                CreatedDateTime       = $user.createdDateTime
+                AccountEnabled        = $user.accountEnabled
+                DirectoryRoles        = ($roles -join "; ")
+                Groups                = ($allGroups -join "; ")
+                RoleAssignableGroups  = ($roleAssignableGroups -join "; ")
+                EnterpriseAppAccess   = ($enterpriseAppAccess -join "; ")
             })
         }
 
         $processed = $end + 1
         Write-Progress `
-            -Activity        "Resolving user role assignments" `
+            -Activity        "Resolving user roles/groups/app access" `
             -Status          "$processed of $($activeUsers.Count) users processed" `
             -PercentComplete ([Math]::Round(($processed / $activeUsers.Count) * 100))
     }
 
-    Write-Progress -Activity "Resolving user role assignments" -Completed
-    Write-Host "      Role resolution complete       : $($userDetailsWithRoles.Count) users" -ForegroundColor Green
+    Write-Progress -Activity "Resolving user roles/groups/app access" -Completed
+    Write-Host "      Resolution complete            : $($userDetailsWithRoles.Count) users" -ForegroundColor Green
 
     $userCsvName    = "AuditEntraUsers_$timestamp.csv"
     $userCsvContent = $userDetailsWithRoles |
-        Select-Object Id, DisplayName, UserPrincipalName, CreatedDateTime, AccountEnabled, Roles |
+        Select-Object Id, DisplayName, UserPrincipalName, CreatedDateTime, AccountEnabled,
+                       DirectoryRoles, Groups, RoleAssignableGroups, EnterpriseAppAccess |
+        ConvertTo-Csv -NoTypeInformation |
+        Out-String
+
+    #endregion
+
+    #region ── Service principal inventory ─────────────────────────────────────────
+
+    Write-Host "[7/7] Fetching service principal inventory..." -ForegroundColor Cyan
+    $spSelect = "id,appId,displayName,accountEnabled,servicePrincipalType,passwordCredentials,keyCredentials"
+    $servicePrincipals = Invoke-GraphPagedRequest -AccessToken $token `
+        -Uri "$graphBase/servicePrincipals?`$select=$spSelect"
+
+    $spRows = foreach ($sp in $servicePrincipals) {
+        $expiries = @(
+            @($sp.passwordCredentials | ForEach-Object { $_.endDateTime })
+            @($sp.keyCredentials | ForEach-Object { $_.endDateTime })
+        ) | Where-Object { $_ } | Sort-Object
+
+        [PSCustomObject]@{
+            Id                       = $sp.id
+            AppId                    = $sp.appId
+            DisplayName              = $sp.displayName
+            AccountEnabled           = $sp.accountEnabled
+            ServicePrincipalType     = $sp.servicePrincipalType
+            CredentialCount          = @($sp.passwordCredentials).Count + @($sp.keyCredentials).Count
+            EarliestCredentialExpiry = if ($expiries) { $expiries[0] } else { $null }
+            LatestCredentialExpiry   = if ($expiries) { $expiries[-1] } else { $null }
+        }
+    }
+
+    Write-Host "      Service principals             : $(@($spRows).Count)" -ForegroundColor Green
+
+    $spCsvName    = "AuditEntraServicePrincipals_$timestamp.csv"
+    $spCsvContent = $spRows |
+        Select-Object Id, AppId, DisplayName, AccountEnabled, ServicePrincipalType,
+                       CredentialCount, EarliestCredentialExpiry, LatestCredentialExpiry |
         ConvertTo-Csv -NoTypeInformation |
         Out-String
 
@@ -460,41 +615,38 @@ function Run-EntraUserAudit {
 
     #region ── SharePoint Upload ───────────────────────────────────────────────────
 
-    Write-Host "[5/5] Uploading CSV files to SharePoint..." -ForegroundColor Cyan
-    Write-Host "      Site   : $SharePointSiteUrl" -ForegroundColor Gray
-    Write-Host "      Folder : $SharePointFolderPath" -ForegroundColor Gray
+    Write-Host "Uploading CSV files to SharePoint..." -ForegroundColor Cyan
+    Write-Host "  Site   : $SharePointSiteUrl" -ForegroundColor Gray
+    Write-Host "  Folder : $SharePointFolderPath" -ForegroundColor Gray
 
-    Upload-CsvToSharePoint `
-        -AccessToken $token `
-        -SiteUrl     $SharePointSiteUrl `
-        -FolderPath  $SharePointFolderPath `
-        -FileName    $adminCsvName `
-        -CsvContent  $adminCsvContent
-
-    Write-Host "      Uploaded : $adminCsvName" -ForegroundColor Green
-
-    Upload-CsvToSharePoint `
-        -AccessToken $token `
-        -SiteUrl     $SharePointSiteUrl `
-        -FolderPath  $SharePointFolderPath `
-        -FileName    $userCsvName `
-        -CsvContent  $userCsvContent
-
-    Write-Host "      Uploaded : $userCsvName" -ForegroundColor Green
+    foreach ($file in @(
+        @{ Name = $roleAssignmentCsvName; Content = $roleAssignmentCsvContent }
+        @{ Name = $userCsvName;           Content = $userCsvContent }
+        @{ Name = $spCsvName;             Content = $spCsvContent }
+    )) {
+        Upload-CsvToSharePoint `
+            -AccessToken $token `
+            -SiteUrl     $SharePointSiteUrl `
+            -FolderPath  $SharePointFolderPath `
+            -FileName    $file.Name `
+            -CsvContent  $file.Content
+        Write-Host "  Uploaded : $($file.Name)" -ForegroundColor Green
+    }
 
     #endregion
 
     Write-Host ""
     Write-Host "Audit complete." -ForegroundColor Green
-    Write-Host "  $adminCsvName  →  $SharePointSiteUrl/$SharePointFolderPath" -ForegroundColor Green
-    Write-Host "  $userCsvName   →  $SharePointSiteUrl/$SharePointFolderPath" -ForegroundColor Green
+    Write-Host "  $roleAssignmentCsvName  →  $SharePointSiteUrl/$SharePointFolderPath" -ForegroundColor Green
+    Write-Host "  $userCsvName            →  $SharePointSiteUrl/$SharePointFolderPath" -ForegroundColor Green
+    Write-Host "  $spCsvName              →  $SharePointSiteUrl/$SharePointFolderPath" -ForegroundColor Green
 }
 
 # SIG # Begin signature block
 # MIIsoAYJKoZIhvcNAQcCoIIskTCCLI0CAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA16ZD2HLoW8lCA
-# rTj4P40Hqm6+WXMXhaxJIiUAtsZXBqCCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA2W853HQzD6MA6
+# /nFZt3zPOs9ek5WI2Vc5iln2VgK9IKCCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -700,34 +852,34 @@ function Run-EntraUserAudit {
 # byBQdWJsaWMgQ29kZSBTaWduaW5nIENBIEVWIFIzNgIQBmp+HumDwNBvIWlKxs/D
 # ljANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkG
 # CSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEE
-# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCAfoekKat6oJPLAY0/uHJ986eyBa139yuy7
-# 2p7U4vdnNTANBgkqhkiG9w0BAQEFAASCAgDOcPSsnwAbQNx61V8w2ul1SAaoGht1
-# v7TvVvSduXb2FLduVK32dkLvBRqRDxABmrqQX2wCETe6Wy593FAIT18w6xAEJBF3
-# D3FtjkdDi3kHyzoNPQ3Hs2fgaFp0LHKXB/Bhe89pfqQpPCNvV38H2Ej2OB8AtmN+
-# BGqtRC7vRsebQWWEfoON1YqUK//1Qmixb9AynuBSRW2Tu3FObETjjRJrTeyo/JbL
-# 3mNtqH5Jvntp3/aIxjx0XnbvA6k5Y6AyMN4Beb5jiNy33XQe2//SJ2CbHjWy1hSX
-# Q2YzJFMM22nlcT+Fv6a62vYkHxElCP97MU6JSsgzdTt3/RQiXEvUhoN/BTlp4TtL
-# dkYfvAaiGIodf9ojsruJ0qCQzz2N0VNBdhYiFutOl/UfKwIBNGvwPDxN1L0ZRGk4
-# CpAsUffSOQVhdoT9CJTdSCuYmRwAvBQhhbfCFkTaFl2ek0Ynop4IY0/BGpvMJAuF
-# TNuMJg4MwvIoh5CTg+qUT9EOb8RKw+MRyLOkct+S50IXs4MZaSb2vWHmnSzsB+VR
-# jYpM0hXvPDJ677UuPmKv3Gvx3MZ3NT3oxdHXjA3UsJmF8076OPkrv9dRNPthBQqI
-# ivnycWC5kz54qdgMfw1mvLYE4ypBYDbXSgNJVN2UPUDlXtMCHEv90jTP7wxuhvoT
-# dqjfOwwTFlRsLKGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
+# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCABFz0Sd+jBXBuYhGlVWdNb5EEMtAAsy3Tq
+# kV8KDLxZqTANBgkqhkiG9w0BAQEFAASCAgCKr+SLmZ4kPOCXrUEOz7OGcqvGCg7C
+# 0yPiJ1KdryyO5k0G3HMlTp1V8aczL8VKPBEpsb237dg7UJxkJ8LH1xUUUexA74GK
+# 9V2VLA7AdvU/dfVeuBNEbjlgmqv7l9mUnZhjyWdO97fLFzTqyHpOVf+XkfyLQwCZ
+# zKnPfbXyp2wjwSuJvmkeORu2Mjb+vp4WgSqNu5CwJZ56jTRAKVU6RDQcIImOAYMf
+# oA8EXFOSwcnttQzjka8+7JxVePr9H+/XQxvFn+mHI3q6QO04Jf70uiFgxDSneZ53
+# 5PnYftUY6vAEh3NpTRtVURmns4wvLaZN7tUYemlzAP3CdwfD3yJLfXnXBL3fTc1G
+# eeQrgC2hR/RyLLIUDeAQ8JcDDOE60U2Oh1VmnlG/mLUrORBKyO5pi33fd3QM5DMM
+# PuY9URLlqLN7crfGIe4Zs1BKo7/XHa2+/vEFCbp2gC9SHw6u5yecZsB0VEht53oc
+# dWg7NuwUzJtsVM6j5jB575Mc9XskhwPg3czIKLtma5fnfSQR3EacfWMg/lrNVbfc
+# tuokVbdddcQ99TsocdNxN1tUi6PeN2R80J40DgZauJ/irOvesn8NNvafcvh77uJD
+# piluVEzoGg2BCRNkg6sV1rnlYbjkfFvjGIpaue0IvK4AlybzGrYqvm8KRODYoS+w
+# M3TwmJSFXf8ubqGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
 # BgNVBAYTAlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjFBMD8GA1UEAxM4RGln
 # aUNlcnQgVHJ1c3RlZCBHNCBUaW1lU3RhbXBpbmcgUlNBNDA5NiBTSEEyNTYgMjAy
 # NSBDQTECEAhP3DNPfkVO28MPj/mSGDUwDQYJYIZIAWUDBAIBBQCgaTAYBgkqhkiG
-# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MTQyMjQwNTFa
-# MC8GCSqGSIb3DQEJBDEiBCB7yx+2VQWyjUe8BQ6wi74QSBIQZCTcVKCrJ5QUlUns
-# pTANBgkqhkiG9w0BAQEFAASCAgCet0PPu4cof3V87Jw87EUh6lDVWPMvbyJVQRoY
-# MMkhLgQ1rJ91enLt/Le3AAKRONoOiiHKUaCNKXoReMk1r2OevdMoBdyZd8WqRz8r
-# qsdhtO+ZV/Gvq/LqyYhYRg4y2zedGR8i5jLAuy1EtHO+T9KY0inQ+0Q3TZbyVyUi
-# neAAaF8Zv/xhShlz+/RlgODebQrKYFnRpsxc5QBI+wKP7MRphgNz6zQVhBrS4Ktc
-# J7BRXsEYvRnJCv7iDRCXKx30sZLm73tlDKkLuvPd0J2YlDj33hvdJ5fkvI8uJgNF
-# 2QwE+/nIszuqdsZs3qyP5AJUINi2eGqs245aK53K8V3iVy3bQMAMO9Q7Cyu3o8dO
-# 8tfCd1yKIGhA7iJNN7BbPdJP5texctxUdHehFg2UponvYekouRV0ZrExIkyTNq+z
-# UVavDVDYG5Kqy1AuNd9wWA/wA9m70vwQ/VRBE4UQdgQCftzlcj1xrN3nSrEQM+UW
-# LceaduZJQkQY/sZU3S9jyM/jOIWx7E8DlVevRrpH2lpWE7DhhdqMB4tpRZOn88j6
-# g9aSXYOcuOXIYxkHaZCgGU/i/jOQDEl3/FGTXV4w2G1HMyhTrS/BCvGep+aEpNJo
-# GfXlft63+Lb8/0ITUIg/70zzH5KgbCYDVGxf6tkpDzFQ6mw9X/lrS3uoUdG8rD/k
-# hfFxTw==
+# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MTUwODUzMDBa
+# MC8GCSqGSIb3DQEJBDEiBCA894G7YuImh+XEjM6eIRDpOTlC3MWm+FGK6ibsgLNC
+# VTANBgkqhkiG9w0BAQEFAASCAgAJ18elhfO850FGkIHaB976kuR1II/CH8/Bmu7Y
+# xUhtkJtnh0AiHEMD7Wai97IBlG/yYU2J1Z9ib/jr8Knzn/jDVQjze0VFZc7FWAvX
+# zQNM2r0BRirdedMlHER1jLh4s3XFSF0PqLbSw/hVRQRvakFctc/Zavk69YuxjJ6S
+# iwBfQHgHwfV/ajeOAKkSJV3NBZc1J2VmDiVQ16J/wSUfj9fewQprvlt/0JBJiUK7
+# J6u8fd+QiI0TJB+HBqu/9Y29qhvNLnsGm5fexdmSAJTINx8vceMGA3G6GFj66NMQ
+# 8UAZn7w3c4cDhfm9rbH8qMEVyqYmHBGtLu7xvweyeloFHe385MoyZaC8H07Kn6i5
+# Tkh9TqtT2bIqUQkJQGC/0VFg9iR4okwaFX4gLjR/2y4rBO1m/65/lO46jWJzvdJh
+# WUAx0yASIYBZOdNJ2ROrUuSKICUh7tTxdkidqiXmkyEaLvqVoOAmPM4+OasY3ZT9
+# a7sRY24vIOM2MsjsGRdvG2kSXljyiq3zLAW6vZxbFDjVm5+P2umE/Bzb14zgJniE
+# /3aKGd9k4azdfVD2I7z2ZAA8ZHg+wR4qmGVPSltKDziqe1s2iJaPBp6/5WSoIyjo
+# uk74mlDpT03X+DCQujjgJhKCaA4XBIzHoaCIF4YlcXwqHO/1NsVe/qX81GY5y2KI
+# AQxnng==
 # SIG # End signature block

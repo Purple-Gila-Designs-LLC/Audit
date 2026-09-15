@@ -9,17 +9,20 @@
     this same folder). Where that script answers "what can this user do in Entra/Azure",
     this script answers "what can this user do in on-prem AD".
 
-    For each configured domain it collects three things:
+    For each configured domain it collects three things across four account-type OU trees
+    under "InEight Users" - Internal (employees), External (contractors/non-employee user
+    types), Shared (shared/business-function logons used by multiple people), and Service
+    (service accounts):
 
-      1. USERS  - all enabled user accounts under the "Internal" (employee) OU tree,
-                  including extensionAttribute2 (JobCode, per Copy-JobCodes2EA2.ps1) and
-                  Description (JobCode's original source field).
-      2. SERVICE ACCOUNTS - all accounts under the "Service" OU tree, flagged separately
-                  since they are not employees and won't have a JobCode.
-      3. GROUP MEMBERSHIP - recursive (nested-group-aware) membership for every account
+      1. ACCOUNTS - every account under each OU tree above, tagged with AccountType, plus
+                  extensionAttribute2 (JobCode, per Copy-JobCodes2EA2.ps1) and Description
+                  (JobCode's original source field). JobCode-based peer comparison is only
+                  meaningful for the Internal/Employee type, but the field is captured for
+                  all types since External accounts sometimes carry one too.
+      2. GROUP MEMBERSHIP - recursive (nested-group-aware) membership for every account
                   found above, so a user who is only a member of Group A, which is itself
                   a member of privileged Group B, is correctly credited with Group B too.
-      4. DELEGATED RIGHTS (optional, -IncludeACLDelegation) - non-inherited ACEs on every
+      3. DELEGATED RIGHTS (optional, -IncludeACLDelegation) - non-inherited ACEs on every
                   OU in the domain, i.e. rights granted by delegation (Delegation of
                   Control wizard / dsacls) rather than by group membership. This is the
                   audit trail for things like "Helpdesk group can reset passwords in this
@@ -32,13 +35,34 @@
 
 .PARAMETER Domain
     One or more domain DNS names to inventory. Defaults to both domains currently known
-    to be in scope for this audit.
+    to be in scope for this audit. Used for labeling output/JobCode rows - actual queries
+    target -DomainController, not this name directly (see below).
+
+.PARAMETER DomainController
+    Specific domain controller (FQDN) to query for each -Domain, matched by position.
+    Required because the machine running this script is Entra-joined, not AD-joined
+    (confirmed 2026-09-14) - there's no domain-joined DNS/Kerberos context to locate a DC
+    from the bare domain name the way Get-ADUser normally would, so this has to be
+    explicit. Defaults to 'PSADDS1.harddollar.local' for harddollar.local and
+    'in8azuredc7.in8azure.local' for IN8AZURE.local (one of four confirmed DCs -
+    in8azuredc7/8/9/10.in8azure.local - pick another with -DomainController if dc7 is
+    ever unavailable).
 
 .PARAMETER EmployeeOU
     Distinguished-name suffix (relative to each domain's default naming context is NOT
     assumed - pass full DNs) identifying the employee/user OU tree to scan. Accepts one
     value per -Domain, matched by position. Defaults to the InEight OU layout already in
     use in harddollar.local; override per-domain as needed.
+
+.PARAMETER ExternalOU
+    Same idea as -EmployeeOU, for the "External" OU tree (contractors and other
+    non-employee interactive user types). Added 2026-09-14 at Roger's request - these
+    accounts are essential to capture even though they typically fall outside JobCode
+    peer comparison.
+
+.PARAMETER SharedOU
+    Same idea as -EmployeeOU, for the "Shared" OU tree (shared/business-function logons
+    used by multiple people for a specific purpose). Added 2026-09-14 alongside -ExternalOU.
 
 .PARAMETER ServiceAccountOU
     Same idea as -EmployeeOU, for the Service-account OU tree.
@@ -49,9 +73,20 @@
     runtime. Omit it for a quick group-membership-only pass.
 
 .PARAMETER Credential
-    Optional PSCredential to use for domains that need different auth than the account
-    running the script (e.g. no trust between harddollar.local and IN8AZURE.local). Applies
-    to every domain in this run - re-run separately per domain if credentials differ.
+    Optional PSCredential to use instead of the identity running the script. If omitted,
+    resolved automatically from SecretManagement via -CredentialSecretName (see below) -
+    matches the pattern used by Run-EntraUserAudit.ps1 and the NinjaOne orchestrator, so
+    credentials never need to be typed/pasted for a routine re-run. A two-way trust between
+    harddollar.local and IN8AZURE.local is confirmed in place as of 2026-09-14, so a single
+    credential is expected to work across both domains as long as the account has been
+    granted read rights in both - see docs\AD-Service-Account-Setup.md.
+
+.PARAMETER CredentialSecretName
+    Name of the SecretManagement secret holding the PSCredential to use when -Credential
+    isn't supplied. Store it with:
+    Set-Secret -Name 'AD-ServiceAccount' -Secret (Get-Credential 'HARDDOLLAR\svc-priv-audit')
+    Defaults to 'AD-ServiceAccount'. Vault: whatever SecretManagement resolves by default
+    (PGDLocalVault today - see docs\AD-Service-Account-Setup.md).
 
 .PARAMETER OutputPath
     Folder to write the per-domain CSV reports to. Defaults to .\output next to this
@@ -60,8 +95,9 @@
 .EXAMPLE
     .\Get-ADRightsInventory.ps1
 
-    Quick pass: users, service accounts, and recursive group membership for both
-    harddollar.local and IN8AZURE.local, no ACL delegation walk.
+    Quick pass: employee, external, shared, and service accounts, plus recursive group
+    membership, for both harddollar.local and IN8AZURE.local, no ACL delegation walk.
+    Credential resolves automatically from the 'AD-ServiceAccount' secret.
 
 .EXAMPLE
     .\Get-ADRightsInventory.ps1 -Domain 'harddollar.local' -IncludeACLDelegation -OutputPath 'C:\Audit\AD'
@@ -70,15 +106,32 @@
 
 .NOTES
     Author  : RTillmon - InEight Technology Operations (with Claude Code)
-    Version : 1.0.0
+    Version : 1.1.0
     Created : 2026-09-14
+    Updated : 2026-09-14 - added External/Shared OU scope, Windows Credential Manager +
+              SecretManagement credential resolution (AD-ServiceAccount), confirmed trust
+              note, required -DomainController (this machine is Entra-joined, not
+              AD-joined - no DC locator available from a bare domain name).
+    Updated : 2026-09-15 - fixed a real bug found on the first live run: the per-domain
+              loop variables $employeeOU/$externalOU/$sharedOU collided (case-insensitive)
+              with the like-named [string[]] parameters, so PowerShell kept re-coercing
+              the scalar back into a 1-element array on every loop iteration, which then
+              failed -SearchBase [string] binding ("Cannot convert value to type
+              System.String") for Employee/External/Shared every time - Service accounts
+              were unaffected since $svcOU doesn't collide with $ServiceAccountOU, which
+              is why only that one query type ever succeeded. Renamed to
+              $empOU/$extOU/$shrOU. Also added the default IN8AZURE.local DC
+              (in8azuredc7.in8azure.local, confirmed by Roger - dc7/8/9/10 all valid).
 
     Run as a dedicated, non-privileged, read-only-delegated service account - see
     docs\AD-Service-Account-Setup.md. This script only reads; it never modifies AD.
+    HARDDOLLAR\svc-priv-audit was created for this purpose 2026-09-14.
 
     IN8AZURE.local is confirmed in scope alongside harddollar.local as of 2026-09-14.
-    If there is no two-way trust between the domains, run once per domain with the
-    appropriate -Credential rather than relying on a single identity for both.
+    A two-way trust between the two domains is also confirmed in place as of 2026-09-14,
+    so a single -Credential (or the resolved AD-ServiceAccount secret) is expected to work
+    for both, as long as it has been delegated read rights on both sides. If that ever
+    stops being true, run once per domain with the appropriate -Credential instead.
 #>
 
 #Requires -Module ActiveDirectory
@@ -87,8 +140,18 @@
 param(
     [string[]]$Domain = @('harddollar.local', 'IN8AZURE.local'),
 
+    [string[]]$DomainController = @('PSADDS1.harddollar.local', 'in8azuredc7.in8azure.local'),
+
     [string[]]$EmployeeOU = @(
         'OU=Internal,OU=InEight Users,DC=harddollar,DC=local'
+    ),
+
+    [string[]]$ExternalOU = @(
+        'OU=External,OU=InEight Users,DC=harddollar,DC=local'
+    ),
+
+    [string[]]$SharedOU = @(
+        'OU=Shared,OU=InEight Users,DC=harddollar,DC=local'
     ),
 
     [string[]]$ServiceAccountOU = @(
@@ -106,10 +169,97 @@ param(
 
     [System.Management.Automation.PSCredential]$Credential,
 
+    [string]$CredentialManagerTarget = 'AD-ServiceAccount',
+
+    [string]$CredentialSecretName = 'AD-ServiceAccount',
+
     [string]$OutputPath = (Join-Path $PSScriptRoot 'output')
 )
 
 Import-Module ActiveDirectory -ErrorAction Stop
+
+#region ── Windows Credential Manager helper ───────────────────────────────────
+function Get-CredManGenericCredential {
+    <#
+        Reads a *generic* credential (username + password) directly from the native
+        Windows Credential Manager store via the Win32 CredRead API - no extra module
+        dependency (the community `CredentialManager` PowerShell module isn't installed
+        here). Returns $null (not a terminating error) if the target doesn't exist, so
+        callers can fall through to another resolution method.
+    #>
+    param([Parameter(Mandatory)][string]$Target)
+
+    if (-not ('CredMan.NativeMethods' -as [type])) {
+        Add-Type -Namespace CredMan -Name NativeMethods -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+public struct CREDENTIAL {
+    public int    Flags;
+    public int    Type;
+    public string TargetName;
+    public string Comment;
+    public long   LastWritten;
+    public int    CredentialBlobSize;
+    public IntPtr CredentialBlob;
+    public int    Persist;
+    public int    AttributeCount;
+    public IntPtr Attributes;
+    public string TargetAlias;
+    public string UserName;
+}
+
+[DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+public static extern bool CredRead(string target, int type, int reservedFlag, out IntPtr credentialPtr);
+
+[DllImport("advapi32.dll", SetLastError = true)]
+public static extern void CredFree(IntPtr cred);
+'@
+    }
+
+    $credPtr = [IntPtr]::Zero
+    # type 1 = CRED_TYPE_GENERIC
+    $ok = [CredMan.NativeMethods]::CredRead($Target, 1, 0, [ref]$credPtr)
+    if (-not $ok) { return $null }
+
+    try {
+        $cred = [System.Runtime.InteropServices.Marshal]::PtrToStructure($credPtr, [type]([CredMan.NativeMethods+CREDENTIAL]))
+        if ($cred.CredentialBlobSize -eq 0 -or -not $cred.UserName) { return $null }
+
+        $bytes = New-Object byte[] $cred.CredentialBlobSize
+        [System.Runtime.InteropServices.Marshal]::Copy($cred.CredentialBlob, $bytes, 0, $cred.CredentialBlobSize)
+        $password = [System.Text.Encoding]::Unicode.GetString($bytes)
+        $secure = ConvertTo-SecureString -String $password -AsPlainText -Force
+        return [System.Management.Automation.PSCredential]::new($cred.UserName, $secure)
+    } finally {
+        [CredMan.NativeMethods]::CredFree($credPtr)
+    }
+}
+#endregion
+
+# --- Resolve credential ---------------------------------------------------------------
+# Order: explicit -Credential > native Windows Credential Manager (-CredentialManagerTarget,
+# what Roger actually used for the AD service account, unlike NinjaOne/Entra which use the
+# SecretManagement/SecretStore vault) > SecretManagement (-CredentialSecretName, kept as a
+# fallback for consistency with the other two collectors) > the identity running the script.
+#   Saved via: Control Panel > Credential Manager > Windows Credentials/Generic Credentials,
+#   or:  cmdkey /generic:AD-ServiceAccount /user:HARDDOLLAR\svc-priv-audit /pass:<password>
+if (-not $Credential) {
+    $Credential = Get-CredManGenericCredential -Target $CredentialManagerTarget
+    if ($Credential) {
+        Write-Verbose "Resolved credential from Windows Credential Manager target '$CredentialManagerTarget' (user: $($Credential.UserName))."
+    }
+}
+if (-not $Credential) {
+    if (Get-Module -ListAvailable -Name Microsoft.PowerShell.SecretManagement) {
+        Import-Module Microsoft.PowerShell.SecretManagement -ErrorAction Stop
+        try {
+            $Credential = Get-Secret -Name $CredentialSecretName -ErrorAction Stop
+        } catch {
+            Write-Warning "No -Credential supplied; Windows Credential Manager target '$CredentialManagerTarget' and SecretManagement secret '$CredentialSecretName' both failed to resolve ($_). Falling back to the identity running this script."
+        }
+    } else {
+        Write-Warning "No -Credential supplied and Windows Credential Manager target '$CredentialManagerTarget' was not found. Falling back to the identity running this script."
+    }
+}
 
 if (-not (Test-Path $OutputPath)) {
     New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
@@ -260,36 +410,94 @@ function Get-ADDelegatedRights {
     return $results
 }
 
+function Get-ADInteractiveAccounts {
+    <#
+        Shared query shape for the three "interactive human" OU trees (Internal/Employee,
+        External, Shared) - same property set, just tagged with a different AccountType so
+        they land in one combined membership report but stay distinguishable. Service
+        accounts are queried separately (Get-ADUser -Filter * incl. disabled, different
+        property set) since they're not people and PasswordNeverExpires matters more than
+        JobCode/Title/Department for them.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$SearchBase,
+        [Parameter(Mandatory)][string]$AccountType,
+        [Parameter(Mandatory)][hashtable]$AdParams
+    )
+
+    Get-ADUser -Filter { Enabled -eq $true } -SearchBase $SearchBase `
+        -Properties DisplayName, Description, extensionAttribute2, EmployeeID,
+                    Title, Department, Manager, whenCreated, PasswordLastSet,
+                    ServicePrincipalName @AdParams |
+        Select-Object SamAccountName, UserPrincipalName, DisplayName,
+            @{N='AccountType';E={$AccountType}},
+            @{N='JobCode';E={$_.extensionAttribute2}},
+            Description, EmployeeID, Title, Department, Manager,
+            whenCreated, PasswordLastSet, DistinguishedName,
+            @{N='HasSPN';E={[bool]$_.ServicePrincipalName}}
+}
+
 #endregion
 
 #region ── Main ─────────────────────────────────────────────────────────────────
 
 for ($i = 0; $i -lt $Domain.Count; $i++) {
     $dc = $Domain[$i]
-    $employeeOU = if ($i -lt $EmployeeOU.Count) { $EmployeeOU[$i] } else { $EmployeeOU[0] }
-    $svcOU      = if ($i -lt $ServiceAccountOU.Count) { $ServiceAccountOU[$i] } else { $ServiceAccountOU[0] }
+    # NOTE: these must NOT be named $employeeOU/$externalOU/$sharedOU - PowerShell variable
+    # names are case-insensitive, so a name differing from a [string[]] *parameter* only by
+    # first-letter case (e.g. $employeeOU vs $EmployeeOU) is the SAME variable. Reassigning
+    # it here would silently re-coerce the scalar string back into a 1-element string[] on
+    # every write (the parameter's type constraint persists on the PSVariable), which then
+    # fails -SearchBase [string] binding downstream ("Cannot convert value to type
+    # System.String") even though the array only has one element. Root-caused 2026-09-14
+    # against the real tenant - $svcOU below never had this bug since it doesn't collide
+    # with $ServiceAccountOU, which is exactly why service accounts queried fine while
+    # employee/external/shared did not.
+    $empOU = if ($i -lt $EmployeeOU.Count) { $EmployeeOU[$i] } else { $EmployeeOU[0] }
+    $extOU = if ($i -lt $ExternalOU.Count) { $ExternalOU[$i] } else { $ExternalOU[0] }
+    $shrOU = if ($i -lt $SharedOU.Count) { $SharedOU[$i] } else { $SharedOU[0] }
+    $svcOU = if ($i -lt $ServiceAccountOU.Count) { $ServiceAccountOU[$i] } else { $ServiceAccountOU[0] }
 
-    Write-Host "=== Domain: $dc ===" -ForegroundColor Cyan
-    $adParams = @{ Server = $dc; ErrorAction = 'SilentlyContinue' }
+    # This machine is Entra-joined, not AD-joined (confirmed 2026-09-14), so there's no
+    # domain-joined DC locator to fall back on - a -DomainController entry is required for
+    # every -Domain, not optional. Skip (not guess) if one wasn't provided for this domain.
+    if ($i -ge $DomainController.Count -or -not $DomainController[$i]) {
+        Write-Warning "No -DomainController entry for domain '$dc' (index $i) - this machine is Entra-joined and can't locate a DC from the bare domain name. Skipping '$dc'; pass -DomainController explicitly for it."
+        continue
+    }
+    $server = $DomainController[$i]
+
+    Write-Host "=== Domain: $dc (server: $server) ===" -ForegroundColor Cyan
+    $adParams = @{ Server = $server; ErrorAction = 'SilentlyContinue' }
     if ($Credential) { $adParams['Credential'] = $Credential }
 
-    # --- Employees ---------------------------------------------------------
-    Write-Host "  Collecting employee accounts under $employeeOU ..."
+    # --- Employees / External / Shared (interactive human accounts) ---------
+    Write-Host "  Collecting employee accounts under $empOU ..."
     $employees = @()
     try {
-        $employees = Get-ADUser -Filter { Enabled -eq $true } -SearchBase $employeeOU `
-            -Properties DisplayName, Description, extensionAttribute2, EmployeeID,
-                        Title, Department, Manager, whenCreated, PasswordLastSet,
-                        ServicePrincipalName @adParams |
-            Select-Object SamAccountName, UserPrincipalName, DisplayName,
-                @{N='JobCode';E={$_.extensionAttribute2}},
-                Description, EmployeeID, Title, Department, Manager,
-                whenCreated, PasswordLastSet, DistinguishedName,
-                @{N='HasSPN';E={[bool]$_.ServicePrincipalName}}
+        $employees = Get-ADInteractiveAccounts -SearchBase $empOU -AccountType 'Employee' -AdParams $adParams
     } catch {
-        Write-Warning "  Failed to query $employeeOU on $dc : $_"
+        Write-Warning "  Failed to query $empOU on $dc : $_"
     }
     Write-Host "  -> $($employees.Count) employee accounts"
+
+    Write-Host "  Collecting external/contractor accounts under $extOU ..."
+    $external = @()
+    try {
+        $external = Get-ADInteractiveAccounts -SearchBase $extOU -AccountType 'External' -AdParams $adParams
+    } catch {
+        Write-Warning "  Failed to query $extOU on $dc : $_"
+    }
+    Write-Host "  -> $($external.Count) external accounts"
+
+    Write-Host "  Collecting shared accounts under $shrOU ..."
+    $shared = @()
+    try {
+        $shared = Get-ADInteractiveAccounts -SearchBase $shrOU -AccountType 'Shared' -AdParams $adParams
+    } catch {
+        Write-Warning "  Failed to query $shrOU on $dc : $_"
+    }
+    Write-Host "  -> $($shared.Count) shared accounts"
 
     # --- Service accounts ---------------------------------------------------
     Write-Host "  Collecting service accounts under $svcOU ..."
@@ -298,31 +506,32 @@ for ($i = 0; $i -lt $Domain.Count; $i++) {
         $serviceAccounts = Get-ADUser -Filter * -SearchBase $svcOU `
             -Properties Description, whenCreated, PasswordLastSet, PasswordNeverExpires,
                         ServicePrincipalName @adParams |
-            Select-Object SamAccountName, UserPrincipalName, Enabled, Description,
-                whenCreated, PasswordLastSet, PasswordNeverExpires, DistinguishedName,
-                @{N='HasSPN';E={[bool]$_.ServicePrincipalName}}
+            Select-Object SamAccountName, UserPrincipalName, Enabled,
+                @{N='AccountType';E={'ServiceAccount'}},
+                Description, whenCreated, PasswordLastSet, PasswordNeverExpires,
+                DistinguishedName, @{N='HasSPN';E={[bool]$_.ServicePrincipalName}}
     } catch {
         Write-Warning "  Failed to query $svcOU on $dc : $_"
     }
     Write-Host "  -> $($serviceAccounts.Count) service accounts"
 
     # --- Recursive group membership -----------------------------------------
-    Write-Host "  Resolving recursive group membership for $($employees.Count + $serviceAccounts.Count) accounts ..."
+    $allAccounts = @($employees) + @($external) + @($shared) + @($serviceAccounts)
+    Write-Host "  Resolving recursive group membership for $($allAccounts.Count) accounts ..."
     $membershipRows = [System.Collections.Generic.List[pscustomobject]]::new()
-    foreach ($acct in @($employees) + @($serviceAccounts)) {
-        $isSvc = $serviceAccounts.SamAccountName -contains $acct.SamAccountName
-        $groups = Get-ADRecursiveGroupMembership -DistinguishedName $acct.DistinguishedName -Server $dc -Credential $Credential
+    foreach ($acct in $allAccounts) {
+        $groups = Get-ADRecursiveGroupMembership -DistinguishedName $acct.DistinguishedName -Server $server -Credential $Credential
         foreach ($g in $groups) {
             $membershipRows.Add([pscustomobject]@{
-                Domain           = $dc
-                SamAccountName   = $acct.SamAccountName
-                IsServiceAccount = $isSvc
-                JobCode          = $acct.JobCode
-                GroupName        = $g.GroupName
-                GroupCategory    = $g.GroupCategory
-                GroupScope       = $g.GroupScope
-                NestedDepth      = $g.NestedDepth
-                ViaGroup         = $g.ViaGroup
+                Domain         = $dc
+                SamAccountName = $acct.SamAccountName
+                AccountType    = $acct.AccountType
+                JobCode        = $acct.JobCode
+                GroupName      = $g.GroupName
+                GroupCategory  = $g.GroupCategory
+                GroupScope     = $g.GroupScope
+                NestedDepth    = $g.NestedDepth
+                ViaGroup       = $g.ViaGroup
             })
         }
     }
@@ -330,19 +539,21 @@ for ($i = 0; $i -lt $Domain.Count; $i++) {
 
     # --- Export ---------------------------------------------------------------
     $employees        | Export-Csv -NoTypeInformation -Path (Join-Path $OutputPath "ADUsers_${dc}_$RunStamp.csv")
+    $external         | Export-Csv -NoTypeInformation -Path (Join-Path $OutputPath "ADExternalAccounts_${dc}_$RunStamp.csv")
+    $shared           | Export-Csv -NoTypeInformation -Path (Join-Path $OutputPath "ADSharedAccounts_${dc}_$RunStamp.csv")
     $serviceAccounts  | Export-Csv -NoTypeInformation -Path (Join-Path $OutputPath "ADServiceAccounts_${dc}_$RunStamp.csv")
     $membershipRows   | Export-Csv -NoTypeInformation -Path (Join-Path $OutputPath "ADGroupMembership_${dc}_$RunStamp.csv")
 
     # --- Delegated rights (optional, slow) -------------------------------------
     if ($IncludeACLDelegation) {
         Write-Host "  Building schema/extended-rights GUID map ..."
-        $guidMap = Get-ADSchemaGuidMap -Server $dc -Credential $Credential
+        $guidMap = Get-ADSchemaGuidMap -Server $server -Credential $Credential
 
         Write-Host "  Walking OU delegation for domain root (this is the slow part) ..."
-        $domainParams = @{ Server = $dc }
+        $domainParams = @{ Server = $server }
         if ($Credential) { $domainParams['Credential'] = $Credential }
         $domainDN = (Get-ADDomain @domainParams).DistinguishedName
-        $delegation = Get-ADDelegatedRights -SearchBase $domainDN -Server $dc `
+        $delegation = Get-ADDelegatedRights -SearchBase $domainDN -Server $server `
             -SchemaGuidMap $guidMap -ExcludeTrustees $ExcludeWellKnownTrustees -Credential $Credential
 
         $delegation | Export-Csv -NoTypeInformation -Path (Join-Path $OutputPath "ADDelegatedRights_${dc}_$RunStamp.csv")
@@ -356,12 +567,11 @@ Write-Host "`nDone. Review ADDelegatedRights_*.csv exclusions against your envir
 Write-Host "the default -ExcludeWellKnownTrustees list is a starting point, not a guarantee every default ACE is filtered." -ForegroundColor Yellow
 
 #endregion
-
 # SIG # Begin signature block
 # MIIsoAYJKoZIhvcNAQcCoIIskTCCLI0CAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDByrXaVDpdeaUm
-# IrtdBZKJgxi/P+U9ucPkbN96Ip5Es6CCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAzYmZoAL83WOkP
+# j7H/ykpCqZtRFpn8+2ntYi6gXL1XF6CCJa8wggVvMIIEV6ADAgECAhBI/JO0YFWU
 # jTanyYqJ1pQWMA0GCSqGSIb3DQEBDAUAMHsxCzAJBgNVBAYTAkdCMRswGQYDVQQI
 # DBJHcmVhdGVyIE1hbmNoZXN0ZXIxEDAOBgNVBAcMB1NhbGZvcmQxGjAYBgNVBAoM
 # EUNvbW9kbyBDQSBMaW1pdGVkMSEwHwYDVQQDDBhBQUEgQ2VydGlmaWNhdGUgU2Vy
@@ -567,34 +777,34 @@ Write-Host "the default -ExcludeWellKnownTrustees list is a starting point, not 
 # byBQdWJsaWMgQ29kZSBTaWduaW5nIENBIEVWIFIzNgIQBmp+HumDwNBvIWlKxs/D
 # ljANBglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkG
 # CSqGSIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEE
-# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCCvFjmHFg+oucwGNxLnq7kfqjg/cK1E6yqL
-# PXR7qlST+DANBgkqhkiG9w0BAQEFAASCAgBD0lIBkQooE3gYsUVj8L95aXBGv6A4
-# NaJGvzqXBWnLFyNQpqR0JVoxjDiE32+RAYBRIpkj8nOw++ea4UOguX4F8QP6BxwE
-# E48jxt3wIUWWBg4iyyi3GyhNrLlW1/c5ySATO6edrH/hjzRBtxigSO/cR7D5oueS
-# OWJS5ntLfjs+S7O3qiOakbzKPfBuvytH7drg8XETsOkEMrhZ70k+RRD/lCGW0o1P
-# vG2CaH7l5v06YJo4V+pZm4uY/+FdIbF2zlCdtaT6e9/DGeNsxn9aCxFiUmlN68LK
-# dgyGUs0G4YPP9+lq/SNSlmqxnM7SVrdB9oy9GIOqKo/LRGxFukMMHnGD10RWyvzk
-# c7xmZPkmcP2jXVlF9dPceKPJfJHUiITcteVA5fOQMMpRnBUgwAP3aq4vTtMnDB9y
-# ViFzZlCy6WjVzVxU6vSlkF6P+iLELX4ikZYsr7etxIOQmiy4pkqRHc1n4264TYbE
-# of+QTTczDz/BiNYzrY9yVhnqmUgZcbkawzmevg3dD4KY08Np0tjsPs7x7RDoDrUy
-# T25hkQzGeKOXHXUFnTD0YrvRRXv29CWC1aUVtYppVUzereACRba+EvQ2sJS973X3
-# t8kLK+OxTc4hb995qjUwVX4TjpwEzy8u1IMXJwmMnlI2g3DYghE9S1Pv/8Ls7gMJ
-# N8GLIBJmASjBb6GCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
+# AYI3AgEVMC8GCSqGSIb3DQEJBDEiBCDk2KeT0DAP4gDEIP4ryCUBX5xtvB6RUn4P
+# EA6lYZ5ycjANBgkqhkiG9w0BAQEFAASCAgBOr6FQBMK5dVg1/QxnlP0Ks4eqbtL9
+# 8THXGQrq81lu/ewtXQy6tq2dJEkOgzVxR1dDBhBLYyXMcw+CzxkDC63cpp+RTtL9
+# IFC2gA0/d81v/vfPyaBdonSSUTqhuu8ps1EYHc4m2c0ofxJjHIs0j+6zBhMgdcWT
+# jYmrO6nz28AIQbbwmlq15jLHcIuwYXbV5r+5nbKKe4hrgvKY5kWKscho05D5HV/4
+# 4+cCrF4b9a9T8CQ3m+fK7yUjyNVP8Fq/ZFp2toIUZgREctvw5LJaeR9OSXMQJM5B
+# yk2IMyf/kfXuy/+gW1St46GIES8owmKhtPEZHHU366poI2qf+hOGOdJKNPQznev5
+# 9ewBwHy6mapX2UOm6CT3BKXX7LqBylxCvIjw8yZY9LQxKYN1N2j22tn5SYzmoyjS
+# jVveVA+91Eb/BY8BHIfSsmvxP4FxNnfITELEefvtWJ3K/ljnOmmAGKoAiOkxSzH6
+# mKwAsU0OAH4nBpHVcRQvOYDZpaKKE8DBykn19sbwjDdZhBrh9Cy6CFm4cXzCPVd2
+# 3gZzKkaPLaMSfm90MHrxAV9WhNlKhcj4XeDITUtTN1djLdHAS3oczeEg+iiwgI3+
+# rfz9Vg4936q36FszELEVEqA/hThsEfHA/iv+T1JKf7dhtuy+RZMlZ7HzUEKPwkza
+# VBEO2IWHxLPuGqGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkxCzAJ
 # BgNVBAYTAlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjFBMD8GA1UEAxM4RGln
 # aUNlcnQgVHJ1c3RlZCBHNCBUaW1lU3RhbXBpbmcgUlNBNDA5NiBTSEEyNTYgMjAy
 # NSBDQTECEAhP3DNPfkVO28MPj/mSGDUwDQYJYIZIAWUDBAIBBQCgaTAYBgkqhkiG
-# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MTQyMjQwNDFa
-# MC8GCSqGSIb3DQEJBDEiBCCXECQSU+Z21mbw3J4/Bpdn2Hke7nNQN1pgIECL7+R/
-# WzANBgkqhkiG9w0BAQEFAASCAgBoGvBEB7Ktvjxq60sdK8HlPPUM0SjrVGJXhrSu
-# RggnorbWXRg8RRz772R6gkCgXRO7tLyRKz1+GYHFizn1aA3UCLRLVJcgx9YIwTxi
-# Hnkt8jV5BDT5FwrS9k0TcTbIO411ETKXVeMyvGrl91wZTnNz5Rvf4BuY2XAVpNmD
-# Xq/SrcPa/Xws+/Ec4DK5zDvHCG/BAuyC0Hv3XuRgaINR+0FR55bqgLh/8NibBhys
-# VUeMstIK9Q37jOhc4zH5cUAXmhdQum+Y0k0buckrT5uuSwQeZMAFaMa6cXEMzTUK
-# h9m+fBZ8gKYWk3uGXZvglKVo1LqF4IafpZY34kbjDMBYQTLqzE6PeVpMMU5UhawW
-# F51UkBHA4eZdOocV2qbEpP1qyTXssPbuCOLeNUTp620cn5ILxcbtkKQR/c30BgDL
-# IE43wEps/9YPaglFGnWASjgyNs3N4jE+pqMrBQ/PokxrXT3fZIL22kqJaFDGYqRM
-# kMk1jK230WgRhDYV0BcphjLXYYaiyRh4A0RHIO/OLlAIvavKVG5K+HWal8pvMPpP
-# 9eNisNwLvS+4L1L/ZGFnIsqlO93DyN5MAvXkdKCu96cyPLqbPU9J1KPSOmX/Ap/C
-# ErBwddE+BEJwqyYHOT2JyRmIJdR7I9i/XVYxvNyhZI7n69OLKY9ZaUoDfhoeRoCg
-# T98NJg==
+# 9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MTUwODUyNDla
+# MC8GCSqGSIb3DQEJBDEiBCDYy5C6pdco4Dfb/kJ+dABOTRQaXku2xPFGPZtiamaV
+# xzANBgkqhkiG9w0BAQEFAASCAgAjHJ7uH+S9ctTja34a58Rl5FelPhJSA6kWwMq8
+# 2bPj0WQIeYUCK/cW/u6R8Kjp9OAGONixbbvG0i/35aU6Z0C0lgBvCP2npT0lLML5
+# yyxtSdIgEfrp+oZwUeNuSk8J5rprzhwd0pnL012nFEOEvtL7qqoWGqTNaEBpEa7G
+# Yrq8aertQKP4sjxHTPd4nRdH3Jk357+f8mT+MuE3QdNrVXX+vALZlkY1kwZS7lDc
+# vTMrmVpVEtW64AMMZHy7gU+1EMzq5zazpCo5hKfSmfr22u4vDZDFzSYtfP+j1iHy
+# S+nzeX9WjMgd6LiK+8GL1bQOjuAmAKUm49u34+Wb5jq0jozPtDLxHz/nkj6Ol7zv
+# P9wavMHkw1xjkab9pXcfW9cyBRPbRxp4L2Rez0mDopF1wuDJd6oLCyHz5N8eDkQ+
+# sM1uk23n2e0yKs1sQUO9BeQ/TW65JMBKHoP/M3MTRWIdTUdt+Q/Aa3wLTn7/s2yh
+# ZbexgaI4ZLFeI3Dl+YonmgunUyxMUtmW/v3XmXYsv7F9GiHUaTDQVcRQeBpImfFU
+# USCYaFmJB4pJ8bHK+fyB8tF4oQrKP1J+Z/67Frd2tZnz8aaNJOfBkw8FDyLyLxYh
+# 4h9lb4+vqVh1Py+CdSjp0+X0mRL5WhYq5oQ5z5TkqE9Ox6k9Ntt+Plde3M3eBIqN
+# aj4iAw==
 # SIG # End signature block

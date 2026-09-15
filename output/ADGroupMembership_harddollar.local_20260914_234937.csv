@@ -1,0 +1,290 @@
+"Domain","SamAccountName","AccountType","JobCode","GroupName","GroupCategory","GroupScope","NestedDepth","ViaGroup"
+"harddollar.local","IUSR_MAIL","ServiceAccount",,"Guests","Security","DomainLocal","1",
+"harddollar.local","glassceiling","ServiceAccount",,"Administrators","Security","DomainLocal","1",
+"harddollar.local","IWAM_MAIL","ServiceAccount",,"IIS_WPG","Security","DomainLocal","1",
+"harddollar.local","IWAM_TRAX","ServiceAccount",,"IIS_WPG","Security","DomainLocal","1",
+"harddollar.local","user7","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user7","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user4","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user4","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user8","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user8","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User5","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User5","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user6","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user6","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user9","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user9","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User3","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User3","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user13","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user13","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user25","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user25","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user15","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user15","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user24","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user24","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user23","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user23","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user14","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user14","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user16","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user16","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user12","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user12","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user21","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user21","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user11","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user11","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user17","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user17","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user22","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user22","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user18","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user18","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User.26","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User.26","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User.28","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User.28","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User.30","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User.30","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User.33","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User.33","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User20","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User20","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User.31","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User.31","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User.32","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User.32","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User19","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User19","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User.29","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User.29","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","User.27","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","User.27","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.06","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.06","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.12","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.12","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.04","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.04","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","InEight.Training.02","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","InEight.Training.02","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","InEight.Training.01","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","InEight.Training.01","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.07","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.07","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.05","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.05","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.08","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.08","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.10","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.10","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.03","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.03","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.11","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.11","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","ineight.training.09","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","ineight.training.09","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user10","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user10","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user10","ServiceAccount",,"InfinyD Developers","Security","Universal","1",
+"harddollar.local","SVC.InEight_DNS_RW","ServiceAccount",,"DnsAdmins","Security","DomainLocal","1",
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"Schema Admins","Security","Universal","1",
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"Domain Admins","Security","Global","1",
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Schema Admins"
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"TRAX $ Acronis Remote Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"ProductionBBAdmins","Security","Universal","2","Domain Admins"
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"IIS_WPG","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"Administrators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.SFProvisioning","ServiceAccount",,"Backup Operators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.ISEAutomation","ServiceAccount",,"Enterprise Admins","Security","Universal","1",
+"harddollar.local","SVC.ISEAutomation","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","SVC.ISEAutomation","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","SVC.ISEAutomation","ServiceAccount",,"Administrators","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","svc.sysadmin","ServiceAccount",,"Domain Admins","Security","Global","1",
+"harddollar.local","svc.sysadmin","ServiceAccount",,"TRAX $ Acronis Remote Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","svc.sysadmin","ServiceAccount",,"ProductionBBAdmins","Security","Universal","2","Domain Admins"
+"harddollar.local","svc.sysadmin","ServiceAccount",,"IIS_WPG","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","svc.sysadmin","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","svc.sysadmin","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","svc.sysadmin","ServiceAccount",,"Administrators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","svc.sysadmin","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","svc.sysadmin","ServiceAccount",,"Backup Operators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.Veeam","ServiceAccount",,"Domain Admins","Security","Global","1",
+"harddollar.local","SVC.Veeam","ServiceAccount",,"TRAX $ Acronis Remote Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.Veeam","ServiceAccount",,"ProductionBBAdmins","Security","Universal","2","Domain Admins"
+"harddollar.local","SVC.Veeam","ServiceAccount",,"IIS_WPG","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.Veeam","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.Veeam","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.Veeam","ServiceAccount",,"Administrators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.Veeam","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.Veeam","ServiceAccount",,"Backup Operators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"Domain Admins","Security","Global","1",
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"TRAX $ Acronis Remote Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"ProductionBBAdmins","Security","Universal","2","Domain Admins"
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"IIS_WPG","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"Administrators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.DomainTrust","ServiceAccount",,"Backup Operators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SVC.DHCP_Replication","ServiceAccount",,"WinRMRemoteWMIUsers__","Security","DomainLocal","1",
+"harddollar.local","AD.Connect","ServiceAccount",,"Enterprise Admins","Security","Universal","1",
+"harddollar.local","AD.Connect","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","AD.Connect","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","AD.Connect","ServiceAccount",,"Administrators","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","da2adm","ServiceAccount",,"SAP_DA2_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceDA2","ServiceAccount",,"SAP_DA2_GlobalAdmin","Security","Global","1",
+"harddollar.local","ea4adm","ServiceAccount",,"SAP_EA4_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceEA4","ServiceAccount",,"SAP_EA4_GlobalAdmin","Security","Global","1",
+"harddollar.local","gw1adm","ServiceAccount",,"SAP_GW1_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceGW1","ServiceAccount",,"SAP_GW1_GlobalAdmin","Security","Global","1",
+"harddollar.local","sr1adm","ServiceAccount",,"SAP_SR1_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceSR1","ServiceAccount",,"SAP_SR1_GlobalAdmin","Security","Global","1",
+"harddollar.local","lvmadm","ServiceAccount",,"SAP_LVM_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceLVM","ServiceAccount",,"SAP_LVM_GlobalAdmin","Security","Global","1",
+"harddollar.local","psdadm","ServiceAccount",,"SAP_PSD_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServicePSD","ServiceAccount",,"SAP_PSD_GlobalAdmin","Security","Global","1",
+"harddollar.local","c20adm","ServiceAccount",,"SAP_C20_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceC20","ServiceAccount",,"SAP_C20_GlobalAdmin","Security","Global","1",
+"harddollar.local","pi1adm","ServiceAccount",,"SAP_PI1_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServicePI1","ServiceAccount",,"SAP_PI1_GlobalAdmin","Security","Global","1",
+"harddollar.local","wd1adm","ServiceAccount",,"SAP_WD1_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceWD1","ServiceAccount",,"SAP_WD1_GlobalAdmin","Security","Global","1",
+"harddollar.local","sbfadm","ServiceAccount",,"SAP_SBF_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceSBF","ServiceAccount",,"SAP_SBF_GlobalAdmin","Security","Global","1",
+"harddollar.local","ktjadm","ServiceAccount",,"SAP_KTJ_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceKTJ","ServiceAccount",,"SAP_KTJ_GlobalAdmin","Security","Global","1",
+"harddollar.local","prdadm","ServiceAccount",,"SAP_PRD_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServicePRD","ServiceAccount",,"SAP_PRD_GlobalAdmin","Security","Global","1",
+"harddollar.local","ea3adm","ServiceAccount",,"SAP_EA3_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceEA3","ServiceAccount",,"SAP_EA3_GlobalAdmin","Security","Global","1",
+"harddollar.local","ea2adm","ServiceAccount",,"SAP_EA2_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceEA2","ServiceAccount",,"SAP_EA2_GlobalAdmin","Security","Global","1",
+"harddollar.local","prjadm","ServiceAccount",,"SAP_PRJ_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServicePRJ","ServiceAccount",,"SAP_PRJ_GlobalAdmin","Security","Global","1",
+"harddollar.local","pr1adm","ServiceAccount",,"SAP_PR1_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServicePR1","ServiceAccount",,"SAP_PR1_GlobalAdmin","Security","Global","1",
+"harddollar.local","s71adm","ServiceAccount",,"SAP_S71_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceS71","ServiceAccount",,"SAP_S71_GlobalAdmin","Security","Global","1",
+"harddollar.local","da1adm","ServiceAccount",,"SAP_DA1_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceDA1","ServiceAccount",,"SAP_DA1_GlobalAdmin","Security","Global","1",
+"harddollar.local","isbadm","ServiceAccount",,"SAP_ISB_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceISB","ServiceAccount",,"SAP_ISB_GlobalAdmin","Security","Global","1",
+"harddollar.local","kt1adm","ServiceAccount",,"SAP_KT1_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceKT1","ServiceAccount",,"SAP_KT1_GlobalAdmin","Security","Global","1",
+"harddollar.local","devadm","ServiceAccount",,"SAP_DEV_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceDEV","ServiceAccount",,"SAP_DEV_GlobalAdmin","Security","Global","1",
+"harddollar.local","dsmadm","ServiceAccount",,"SAP_DSM_GlobalAdmin","Security","Global","1",
+"harddollar.local","pd1adm","ServiceAccount",,"SAP_PD1_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceDSM","ServiceAccount",,"SAP_DSM_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServicePD1","ServiceAccount",,"SAP_PD1_GlobalAdmin","Security","Global","1",
+"harddollar.local","srmadm","ServiceAccount",,"SAP_SRM_GlobalAdmin","Security","Global","1",
+"harddollar.local","SAPServiceSRM","ServiceAccount",,"SAP_SRM_GlobalAdmin","Security","Global","1",
+"harddollar.local","SVC.Loadtestreject1","ServiceAccount",,"SG_MicroFocus_Users","Security","Global","1",
+"harddollar.local","SVC.Loadtestreject2","ServiceAccount",,"SG_MicroFocus_Users","Security","Global","1",
+"harddollar.local","SVC.loadtestapprove4","ServiceAccount",,"SG_MicroFocus_Users","Security","Global","1",
+"harddollar.local","SVC.loadtestapprove1","ServiceAccount",,"SG_MicroFocus_Users","Security","Global","1",
+"harddollar.local","SVC.loadtestapprove2","ServiceAccount",,"SG_MicroFocus_Users","Security","Global","1",
+"harddollar.local","SVC.loadtestapprove3","ServiceAccount",,"SG_MicroFocus_Users","Security","Global","1",
+"harddollar.local","ProjectSuiteSvcDBA","ServiceAccount",,"DevOps-InternalSQLAdmin","Security","Global","1",
+"harddollar.local","ProjectSuiteSvcDBA","ServiceAccount",,"DevOps-SQLAdmin","Security","Universal","1",
+"harddollar.local","ProjectSuiteSvcDBA","ServiceAccount",,"DevOps Team","Security","Global","1",
+"harddollar.local","ProjectSuiteSvcDBA","ServiceAccount",,"Ops - DBAs","Security","Global","1",
+"harddollar.local","ProjectSuiteSvcDBA","ServiceAccount",,"Dev - Read-Only","Security","Global","2","DevOps Team"
+"harddollar.local","DocumentMigrationtoo","ServiceAccount",,"Dev - Read-Only","Security","Global","1",
+"harddollar.local","SVC.DOCCUST02","ServiceAccount",,"SG_LAD_CO1SWDOCCUST02","Security","Global","1",
+"harddollar.local","SVC.DOCCUST01","ServiceAccount",,"SG_LAD_CO1SWDOCCUST01","Security","Global","1",
+"harddollar.local","ProdOps","ServiceAccount",,"Jira Customers","Security","Global","1",
+"harddollar.local","TFSBUILD","ServiceAccount",,"SG_M365_VisualStudio_Enterprise","Security","Global","1",
+"harddollar.local","TFSBUILD","ServiceAccount",,"QualityAssurance","Security","Global","1",
+"harddollar.local","TFSBUILD","ServiceAccount",,"Development","Security","Global","1",
+"harddollar.local","TFSHDBUILD","ServiceAccount",,"QualityAssurance","Security","Global","1",
+"harddollar.local","TFSHDBUILD","ServiceAccount",,"Development","Security","Global","1",
+"harddollar.local","LoadtestReject","ServiceAccount",,"SG_MicroFocus_Users","Security","Global","1",
+"harddollar.local","LoadtestApprove","ServiceAccount",,"SG_MicroFocus_Users","Security","Global","1",
+"harddollar.local","HDSQL_Service","ServiceAccount",,"IIS_WPG","Security","DomainLocal","1",
+"harddollar.local","VSTS.AccountOwner","ServiceAccount",,"ServiceNow Users","Security","Global","1",
+"harddollar.local","SVC.Estimate_QA_SQL_","ServiceAccount",,"DevOps-InternalSQLAdmin","Security","Global","1",
+"harddollar.local","AzureAutomationAdmin","ServiceAccount",,"Account Operators","Security","DomainLocal","1",
+"harddollar.local","TFSAdmin","ServiceAccount",,"Domain Admins","Security","Global","1",
+"harddollar.local","TFSAdmin","ServiceAccount",,"TRAX $ Acronis Remote Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","TFSAdmin","ServiceAccount",,"ProductionBBAdmins","Security","Universal","2","Domain Admins"
+"harddollar.local","TFSAdmin","ServiceAccount",,"IIS_WPG","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","TFSAdmin","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","TFSAdmin","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","TFSAdmin","ServiceAccount",,"Administrators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","TFSAdmin","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","TFSAdmin","ServiceAccount",,"Backup Operators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SQLServices","ServiceAccount",,"Domain Admins","Security","Global","1",
+"harddollar.local","SQLServices","ServiceAccount",,"TRAX $ Acronis Remote Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SQLServices","ServiceAccount",,"ProductionBBAdmins","Security","Universal","2","Domain Admins"
+"harddollar.local","SQLServices","ServiceAccount",,"IIS_WPG","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SQLServices","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SQLServices","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SQLServices","ServiceAccount",,"Administrators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SQLServices","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","SQLServices","ServiceAccount",,"Backup Operators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","License.Admin","ServiceAccount",,"BidBuildJobDeleters","Security","Universal","1",
+"harddollar.local","License.Admin","ServiceAccount",,"IIS_WPG","Security","DomainLocal","1",
+"harddollar.local","License.Admin","ServiceAccount",,"BidBuildAdmins","Security","Universal","1",
+"harddollar.local","HDPOC","ServiceAccount",,"ModelSuper","Security","DomainLocal","1",
+"harddollar.local","HDPOC","ServiceAccount",,"ModelRegular","Security","DomainLocal","1",
+"harddollar.local","TSService","ServiceAccount",,"ModelSuper","Security","DomainLocal","1",
+"harddollar.local","TSService","ServiceAccount",,"ModelRegular","Security","DomainLocal","1",
+"harddollar.local","hdservice","ServiceAccount",,"ModelSuper","Security","DomainLocal","1",
+"harddollar.local","hdservice","ServiceAccount",,"ModelRegular","Security","DomainLocal","1",
+"harddollar.local","MSOL_1c6cc9ea2295","ServiceAccount",,"MSOL_AD_Sync_RichCoexistence","Security","Universal","1",
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"Enterprise Admins","Security","Universal","1",
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"Domain Admins","Security","Global","1",
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"SophosAdministrator","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"Denied RODC Password Replication Group","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"Administrators","Security","DomainLocal","2","Enterprise Admins"
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"TRAX $ Acronis Remote Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"ProductionBBAdmins","Security","Universal","2","Domain Admins"
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"IIS_WPG","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","MSOL_172221c1b5b8","ServiceAccount",,"Backup Operators","Security","DomainLocal","2","Domain Admins"
+"harddollar.local","netmon","ServiceAccount",,"SG_Oxidized_User","Security","Global","1",
+"harddollar.local","user1","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user1","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","user2","ServiceAccount",,"User GPO Exceptions","Security","Global","1",
+"harddollar.local","user2","ServiceAccount",,"TrainingRoom","Security","Universal","1",
+"harddollar.local","SVC.NDES","ServiceAccount",,"SG_SRV_NDES","Security","Global","1",
+"harddollar.local","IN8Security","ServiceAccount",,"Network Engineer","Security","Global","1",
+"harddollar.local","IN8Security","ServiceAccount",,"DevOps-SQLAdmin","Security","Universal","1",
+"harddollar.local","IN8Security","ServiceAccount",,"DevOps ADMIN","Security","Global","1",
+"harddollar.local","SVC.SNOWMID_dev","ServiceAccount",,"Storage Replica Administrators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_dev","ServiceAccount",,"Remote Management Users","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_dev","ServiceAccount",,"Hyper-V Administrators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_dev","ServiceAccount",,"Access Control Assistance Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_dev","ServiceAccount",,"Account Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_dev","ServiceAccount",,"Server Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_dev","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_prod","ServiceAccount",,"ServiceNow Users","Security","Global","1",
+"harddollar.local","SVC.SNOWMID_prod","ServiceAccount",,"Storage Replica Administrators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_prod","ServiceAccount",,"Remote Management Users","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_prod","ServiceAccount",,"Hyper-V Administrators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_prod","ServiceAccount",,"Access Control Assistance Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_prod","ServiceAccount",,"Account Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_prod","ServiceAccount",,"Server Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_prod","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_test","ServiceAccount",,"Storage Replica Administrators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_test","ServiceAccount",,"Remote Management Users","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_test","ServiceAccount",,"Hyper-V Administrators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_test","ServiceAccount",,"Access Control Assistance Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_test","ServiceAccount",,"Account Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_test","ServiceAccount",,"Server Operators","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWMID_test","ServiceAccount",,"Remote Desktop Users","Security","DomainLocal","1",
+"harddollar.local","Service.Now","ServiceAccount",,"Distributed COM Users","Security","DomainLocal","1",
+"harddollar.local","SVC.SNOWDashInt","ServiceAccount",,"ServiceNow Users","Security","Global","1",
+"harddollar.local","ineight.testmail","ServiceAccount",,"Jira Customers","Security","Global","1",
+"harddollar.local","IneightCoreAltEmail1","ServiceAccount",,"Jira Customers","Security","Global","1",
+"harddollar.local","Ineight.CoreAltEmail","ServiceAccount",,"Jira Customers","Security","Global","1",
+"harddollar.local","acct","ServiceAccount",,"Accounting","Distribution","Universal","1",
+"harddollar.local","Support","ServiceAccount",,"SG_SVCACCT_MRM","Security","Universal","1",
+"harddollar.local","SEDemo.User1","ServiceAccount",,"Jira Customers","Security","Global","1",

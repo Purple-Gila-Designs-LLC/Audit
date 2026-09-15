@@ -111,21 +111,26 @@ difference.
    run fine right up until it tries to actually invoke the script — you'll get the same
    `user_context_required` error above as the signal to come back and do this step.
 
-## First test run — do this before a full rollout
+## Validated 2026-09-14 against a live device (CO1SWDOCMTST01)
+
+End-to-end run confirmed clean: 6 local group membership rows (including 2 orphaned/unresolvable
+SIDs the ADSI fallback caught in Administrators — exactly the kind of finding this audit is for)
+and 63 User Rights Assignment rows, 0 failures.
 
 ```powershell
-.\Get-NinjaOneServerRightsInventory.ps1 -ClientId $cid -ClientSecret $secret `
-    -TargetSystemNames 'ONE-TEST-SERVER'
+.\Get-NinjaOneServerRightsInventory.ps1 -TargetSystemNames 'ONE-TEST-SERVER'
 ```
 
-Check the output CSVs and console warnings. Things worth confirming on this first run
-specifically, since none of this has been validated against a live tenant yet:
-- `Ninja-Property-Set` succeeds with the named-parameter form (`Local-RightsInventory.ps1` falls
-  back to the piped form automatically, but confirm which one your agent version actually uses
-  from the script's own output/logs in NinjaOne).
-- The orchestrator's polling loop detects completion within `-PollIntervalSeconds` /
-  `-MaxWaitMinutes` defaults — adjust if your agents typically take longer to pick up a script.
-- Compressed payload size is comfortably under your custom field's real limit.
+Confirmed along the way, in case any of it resurfaces on a different tenant/agent version:
+- `Ninja-Property-Set -Name ... -Value ...` (named-parameter form) works as-is — no need for the
+  piped fallback in `Local-RightsInventory.ps1` on this agent version.
+- The polling loop's defaults (`-PollIntervalSeconds 20`, `-MaxWaitMinutes 10`) are generous —
+  the actual run completed within about a minute.
+- A WYSIWYG-type custom field's value comes back from the API as `{text, html}`, not a plain
+  string — `Get-NinjaFieldText` in the orchestrator normalizes this; if you see decode errors on
+  a different field type, check that function first.
+- Compressed payload size (a few hundred bytes to a couple KB for a typical server) is nowhere
+  near any field length limit in practice.
 
 ## Connecting (client-credential / unattended pattern)
 

@@ -1,0 +1,6 @@
+"DeviceId","SystemName","Reason"
+"360","PX1SWPCLOUDADM1","Timed out after 10 minutes waiting for rightsInventoryTimestamp to update"
+"418","ML1SWSUPPORT01","Timed out after 10 minutes waiting for rightsInventoryTimestamp to update"
+"778","CL1SWHDNPS01","Timed out after 10 minutes waiting for rightsInventoryTimestamp to update"
+"3677","CO1SWVSS01","Timed out after 10 minutes waiting for rightsInventoryTimestamp to update"
+"4339","ASSupport1","Timed out after 10 minutes waiting for rightsInventoryTimestamp to update"

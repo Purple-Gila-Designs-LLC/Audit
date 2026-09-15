@@ -1,0 +1,7 @@
+"DeviceId","SystemName","OrganizationId","CollectedUtc","LocalGroup","MemberName","MemberType","PrincipalSource"
+"364","CO1SWDOCMTST01","52","9/14/2026 10:44:42 PM","Administrators","CO1SWDOCMTST01\InEight","User","ADSI fallback - see LocalGroupResilientFallback in Errors"
+"364","CO1SWDOCMTST01","52","9/14/2026 10:44:42 PM","Administrators","HARDDOLLAR\Domain Admins","Group","ADSI fallback - see LocalGroupResilientFallback in Errors"
+"364","CO1SWDOCMTST01","52","9/14/2026 10:44:42 PM","Administrators","HARDDOLLAR\SG_LAD_CO1SWDOCMTST01","Group","ADSI fallback - see LocalGroupResilientFallback in Errors"
+"364","CO1SWDOCMTST01","52","9/14/2026 10:44:42 PM","Administrators","S-1-5-21-3931559087-14600624-1992188608-27210","User","ADSI fallback - see LocalGroupResilientFallback in Errors"
+"364","CO1SWDOCMTST01","52","9/14/2026 10:44:42 PM","Administrators","HARDDOLLAR\Service.Now","User","ADSI fallback - see LocalGroupResilientFallback in Errors"
+"364","CO1SWDOCMTST01","52","9/14/2026 10:44:42 PM","Administrators","S-1-5-21-3931559087-14600624-1992188608-23171","User","ADSI fallback - see LocalGroupResilientFallback in Errors"
